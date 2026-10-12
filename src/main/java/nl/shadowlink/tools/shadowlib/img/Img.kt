@@ -59,7 +59,10 @@ class Img(
      * @return the item or `null` if item can not be found
      */
     fun findItem(name: String): ImgItem? {
+        // GTA: IV IDE entries name their models in mixed case ("NJ01_27Ground") while the
+        // entries inside the .img are lower case, so match exactly first and then folded.
         return items.firstOrNull { item -> item.name == name }
+            ?: items.firstOrNull { item -> item.name.equals(name, ignoreCase = true) }
     }
 
     /**

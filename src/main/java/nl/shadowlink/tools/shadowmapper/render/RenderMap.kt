@@ -141,35 +141,47 @@ class RenderMap(
                         if (item == null) item = fm.imgs[imgNumber].findItem(ideList[i].modelName + ".wft")
                     }
                     if (item != null) {
-                        rf.seek(item.offset)
-                        var br = rf.getByteReader(item.size)
+                        val itemName = item.name
                         var mdl: Model? = null
-                        if (item.name.endsWith(".wdr")) {
-                            println(item.name)
-                            mdl = Model().loadWDR(br, item.size)
-                        } else if (item.name.endsWith(".wdd")) {
-                            mdl = Model().loadWDD(br, item.size, ideList[i]!!.modelName)
-                        } else if (item.name.endsWith(".wft")) {
-                            println("Loading WFT: " + item.name)
-                            mdl = Model().loadWFT(br, item.size)
-                        }
-                        val texName = ideList[i].textureName + ".wtd"
-                        item = fm.imgs[imgNumber].findItem(texName)
-                        if (item != null) {
+                        // parsing must not take the whole render loop down: one broken
+                        // .wdr/.wft/.wdd used to abort loadMap() and freeze the 3D view
+                        try {
                             rf.seek(item.offset)
-                            br = rf.getByteReader(item.size)
-                            val txd = TextureDic(texName, br, gameType, true, item.size)
-                            mdl?.attachTXD(txd)
+                            var br = rf.getByteReader(item.size)
+                            if (itemName.endsWith(".wdr", ignoreCase = true)) {
+                                println(itemName)
+                                mdl = Model().loadWDR(br, item.size)
+                            } else if (itemName.endsWith(".wdd", ignoreCase = true)) {
+                                mdl = Model().loadWDD(br, item.size, ideList[i].modelName)
+                            } else if (itemName.endsWith(".wft", ignoreCase = true)) {
+                                println("Loading WFT: " + itemName)
+                                mdl = Model().loadWFT(br, item.size)
+                            }
+                            val texName = ideList[i].textureName + ".wtd"
+                            val texItem = fm.imgs[imgNumber].findItem(texName)
+                            if (texItem != null) {
+                                rf.seek(texItem.offset)
+                                br = rf.getByteReader(texItem.size)
+                                val txd = TextureDic(texName, br, gameType, true, texItem.size)
+                                mdl?.attachTXD(txd)
+                            }
+                        } catch (t: Throwable) {
+                            println("Failed to load " + itemName + ": " + t)
+                            mdl = null
                         }
                         glDisplayList[i + 1] = gl.glGenLists(1)
                         gl.glNewList(glDisplayList[i + 1], GL2.GL_COMPILE)
-                        if (mdl != null) {
-                            mdl.render(gl)
-                        } else {
-                            drawCube(gl, 10f, 0.1f, 0.5f, 0.9f)
+                        try {
+                            if (mdl != null) {
+                                mdl.render(gl)
+                            } else {
+                                drawCube(gl, 10f, 0.1f, 0.5f, 0.9f)
+                            }
+                        } catch (t: Throwable) {
+                            println("Failed to render " + itemName + ": " + t)
                         }
                         gl.glEndList()
-                        mdl!!.reset()
+                        mdl?.reset()
                         boolList[i] = true
                     }
                 }
