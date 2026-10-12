@@ -96,6 +96,7 @@ class MainForm : JFrame() {
     private var panelIPL = JPanel()
     private var panelMapper = JPanel()
     private var panelRender = JPanel()
+    private var loadDialog: LoadingDialog? = null
     private var spinnerPosX = JSpinner()
     private var spinnerPosY = JSpinner()
     private var spinnerPosZ = JSpinner()
@@ -196,6 +197,16 @@ class MainForm : JFrame() {
         checkMap.addItemListener { evt -> checkMapItemStateChanged(evt) }
         jCheckBox1.text = "Paths"
         jCheckBox1.isEnabled = false
+        glListener.onLoadProgress = { done, total ->
+            // The map is built on the AWT event thread (JOGL dispatches a GLCanvas display there), so
+            // the dialog is updated right here: an invokeLater runnable would only run after the load
+            // had already finished, which is exactly when there is nothing left to watch.
+            if (SwingUtilities.isEventDispatchThread()) {
+                showLoadProgress(done, total)
+            } else {
+                SwingUtilities.invokeLater { showLoadProgress(done, total) }
+            }
+        }
         val jPanel3Layout = GroupLayout(jPanel3)
         jPanel3.layout = jPanel3Layout
         jPanel3Layout.setHorizontalGroup(
@@ -1191,6 +1202,29 @@ class MainForm : JFrame() {
 
     private fun farDrawDistanceItemStateChanged(evt: ItemEvent) {
         glListener.setFullDrawDistance(farDrawDistanceItem.isSelected)
+    }
+
+    /**
+     * Drives the loading dialog while Render (or a double click in the Scene list) builds the map.
+     * Always called on the event dispatch thread: the loading thread reports (done, total) and
+     * signals the end by reporting done == total.
+     */
+    private fun showLoadProgress(done: Int, total: Int) {
+        if (done >= total) {
+            loadDialog?.onLoadingFinished()
+            loadDialog = null
+            return
+        }
+        if (loadDialog == null) {
+            if (fm.ipls.none { it.selected }) return // nothing ticked, nothing to wait for
+            loadDialog = LoadingDialog("Loading WPLs")
+            loadDialog!!.toFront()
+        }
+        val dialog = loadDialog ?: return
+        dialog.onLoadingProgress(done, total)
+        // The event dispatch thread is inside the load right now, so the normal repaint queue would
+        // not be flushed until the load ended; paint the dialog synchronously instead.
+        dialog.repaintNow()
     }
 
     private fun listIPLValueChanged(evt: ListSelectionEvent) {

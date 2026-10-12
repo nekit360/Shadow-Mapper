@@ -31,6 +31,10 @@ class RenderMap(
     var added = false
     /** Draw every instance of the selected IPLs, ignoring the draw distance from the IDE. */
     var fullDrawDistance = false
+    /** Progress of loadMap, called from the loading thread: (done, total). */
+    var progressListener: ((Int, Int) -> Unit)? = null
+    private var progressDone = 0
+    private var progressTotal = 0
     var tempIDE: ItemObject? = null
     var tempIPL: Item_INST? = null
 
@@ -86,11 +90,25 @@ class RenderMap(
         // Clear existing display list
         glDisplayList.forEach { dl -> gl.glDeleteLists(dl, 1) }
 
+        // progress is reported on a fixed 0..1000 scale: phase 1 (resolving the instances of the
+        // selected IPLs against the IDEs) gets the first 10%, phase 2 (looking for every model in
+        // every image) the rest, so the bar never jumps backwards when the phases change
+        progressTotal = 1000
+        progressDone = 0
+        progressListener?.invoke(0, progressTotal)
+        val instancesTotal = fm.ipls.sumOf { if (it.selected) it.itemsInst.size else 0 }.coerceAtLeast(1)
+        var instancesSeen = 0
+
         val boolList: ArrayList<Boolean> = ArrayList<Boolean>()
         val ideList: ArrayList<ItemObject> = ArrayList<ItemObject>()
         fm.ipls.forEach { ipl ->
             if (ipl.selected) {
                 ipl.itemsInst.forEach { instance ->
+                    instancesSeen++
+                    if (instancesSeen % 200 == 0) {
+                        progressDone = instancesSeen * 100 / instancesTotal
+                        progressListener?.invoke(progressDone, progressTotal)
+                    }
                     var ideNumber = 0
                     var ideItem = fm.ides[ideNumber].findItem(instance.name) as? ItemObject
                     while (ideItem == null) {
@@ -127,10 +145,20 @@ class RenderMap(
         }
         glDisplayList = IntArray(ideList.size + 1)
         println("ideList Size: " + ideList.size)
+        // the rest of the work is scanning every image for every model they may contain
+        val phase2Total = (fm.imgs.size * ideList.size).coerceAtLeast(1)
+        var phase2Seen = 0
+        progressDone = 100
+        progressListener?.invoke(progressDone, progressTotal)
         for (imgNumber in fm.imgs.indices) {
             val rf = ReadFunctions(fm.imgs[imgNumber].path)
             println("Opened: " + fm.imgs[imgNumber].fileName)
             for (i in ideList.indices) {
+                phase2Seen++
+                if (phase2Seen % 200 == 0) {
+                    progressDone = 100 + phase2Seen * 900 / phase2Total
+                    progressListener?.invoke(progressDone, progressTotal)
+                }
                 if (!boolList[i]) {
                     var modelName = ""
                     var item: ImgItem? = null
@@ -190,6 +218,9 @@ class RenderMap(
             }
             rf.closeFile()
         }
+
+        progressDone = progressTotal
+        progressListener?.invoke(progressDone, progressTotal)
     }
 
     private fun loadAddedModel(gl: GL2) {

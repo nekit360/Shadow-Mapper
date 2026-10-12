@@ -46,6 +46,16 @@ class GlListener(
 
     @JvmField
     var displayCars = true
+
+    /**
+     * Reports map load progress (done, total) to the GUI. The callback runs on the loading thread,
+     * so the receiver has to hop to the event dispatch thread itself.
+     */
+    var onLoadProgress: ((done: Int, total: Int) -> Unit)? = null
+        set(value) {
+            field = value
+            renderMap.progressListener = value
+        }
     private var mousePos = Point(0, 0)
     private var canvasPos = Point(0, 0)
 

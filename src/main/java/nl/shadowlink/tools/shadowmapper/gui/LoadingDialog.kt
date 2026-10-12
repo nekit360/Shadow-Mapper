@@ -7,7 +7,7 @@ import javax.swing.*
 /**
  * @author Shadow-Link
  */
-internal class LoadingDialog : JDialog(), LoadingStatusCallbacks {
+internal class LoadingDialog(private val initialStatus: String = "Loading: ") : JDialog(), LoadingStatusCallbacks {
 
     private var loadingBar = JProgressBar()
     private var loadingLabel = JLabel()
@@ -43,6 +43,27 @@ internal class LoadingDialog : JDialog(), LoadingStatusCallbacks {
         loadingBar.value = loadingBar.value + 1
     }
 
+    /**
+     * Absolute progress for loads that can report it themselves, such as the map the Render button
+     * builds: the bar is rescaled to the reported total instead of counting single files.
+     */
+    fun onLoadingProgress(done: Int, total: Int) {
+        if (total <= 0) return
+        loadingBar.minimum = 0
+        loadingBar.maximum = total
+        loadingBar.value = done
+    }
+
+    /**
+     * Paints the dialog right now instead of queueing a repaint. The map load runs on the event
+     * dispatch thread, so ordinary repaints are not flushed until it is over - without this the
+     * dialog would stay empty (or never appear) for the whole load.
+     */
+    fun repaintNow() {
+        val pane = contentPane as JComponent
+        pane.paintImmediately(0, 0, pane.width, pane.height)
+    }
+
     override fun onLoadingFinished() {
         dispose()
     }
@@ -53,7 +74,7 @@ internal class LoadingDialog : JDialog(), LoadingStatusCallbacks {
         defaultCloseOperation = DO_NOTHING_ON_CLOSE
         title = "Loading"
         isResizable = false
-        loadingLabel.text = "Loading: "
+        loadingLabel.text = initialStatus
         loadingBar.isStringPainted = true
 
         val layout = GroupLayout(contentPane)
