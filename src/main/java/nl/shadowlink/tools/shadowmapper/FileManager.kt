@@ -104,6 +104,19 @@ class FileManager : Thread() {
         gameType = install.gameType
     }
 
+    /**
+     * Reads one `.ide` named by `gta.dat`/`default.dat`, or null when the file cannot be opened at all.
+     * A full load is 25 s over a hundred files and a modded install is a stack of hand-edited text, so
+     * one unreadable file is reported and skipped rather than taking the rest of the map with it. The
+     * records *inside* a file are guarded by `IDE` itself.
+     */
+    private fun loadIde(idePath: String): IDE? = try {
+        IDE("$gameDir$idePath", gameType!!, true)
+    } catch (ex: Exception) {
+        println("Warning: <IDE> $idePath could not be read (${ex.javaClass.simpleName}: ${ex.message})")
+        null
+    }
+
     private fun startLoading() {
         val imgLoader = ImgLoaderFactory.getImgLoader(gameType!!, key!!)
         val defaultDat = GtaDat(gameDir + "common/data/default.dat", gameDir!!)
@@ -115,21 +128,23 @@ class FileManager : Thread() {
         statusCallbacks?.onStartLoading(itemsToLoad)
 
         defaultDat.ide.forEach(Consumer { idePath: String ->
-            val ide = IDE("$gameDir$idePath", gameType!!, true)
-            hashTable.addHashes(ide)
-            ides.add(ide)
+            loadIde(idePath)?.let { ide ->
+                hashTable.addHashes(ide)
+                ides.add(ide)
 
-            modelIDE.addElement(idePath)
+                modelIDE.addElement(idePath)
+            }
         })
 
         gtaDat.ide.forEach { idePath ->
             statusCallbacks?.onLoadingStatusChanged("<IDE> $idePath")
 
-            val ide = IDE("$gameDir$idePath", gameType!!, true)
-            hashTable.addHashes(ide)
-            ides.add(ide)
+            loadIde(idePath)?.let { ide ->
+                hashTable.addHashes(ide)
+                ides.add(ide)
 
-            modelIDE.addElement(idePath)
+                modelIDE.addElement(idePath)
+            }
 
             statusCallbacks?.onLoadingValueIncreased()
         }
