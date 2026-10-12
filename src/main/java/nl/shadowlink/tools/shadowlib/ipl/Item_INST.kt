@@ -103,10 +103,12 @@ class Item_INST(private val gameType: GameType) : IplItem() {
         val tempHash = rf.readUnsignedInt()
         name = "" + tempHash
         hash = tempHash.toInt()
-        name = hashTable[tempHash]!!
-        if (name == null) {
+        val resolvedName = hashTable[tempHash]
+        if (resolvedName == null) {
             name = "HASH($tempHash)"
             println("ERROR Hash bestaat niet '$tempHash'")
+        } else {
+            name = resolvedName
         }
 
         // Message.displayMsgLow("iName: " + name);

@@ -196,7 +196,10 @@ class FileManager : Thread() {
     private fun loadHashesFromIni() {
         val hashesIni = IniEditor()
         try {
-            hashesIni.load(File(FileManager::class.java.getResource("/hashes.ini")!!.path))
+            // stream, not File(getResource().path): inside a jar the path is not a real file
+            val stream = FileManager::class.java.getResourceAsStream("/hashes.ini")
+                ?: throw IOException("hashes.ini not found on the classpath")
+            stream.use { hashesIni.load(it) }
             hashesIni.getSectionMap("cars").forEach { (hash, value) -> hashTable.add(hash.toLong(), value) }
             hashesIni.getSectionMap("hashes").forEach { (hash, value) -> hashTable.add(hash.toLong(), value) }
         } catch (e: IOException) {
