@@ -19,6 +19,7 @@ import javax.swing.*
 import javax.swing.event.ChangeEvent
 import javax.swing.event.ListSelectionEvent
 import javax.swing.event.ListSelectionListener
+import kotlin.system.exitProcess
 
 /**
  * @author Shadow-Link
@@ -1231,7 +1232,17 @@ class MainForm : JFrame() {
     } // GEN-LAST:event_textXKeyTyped
 
     private fun formWindowClosing(evt: WindowEvent) { // GEN-FIRST:event_formWindowClosing
-        SaveScreen(fm, true)
+        // The save screen is a new frame and needs heap; when the JVM is already out of memory (a load
+        // of too many IPLs, for instance) its constructor throws inside the event dispatch, nothing is
+        // shown and the window cannot be closed at all - not even with the X, because the close always
+        // goes through here. Give the close a way out in that case.
+        try {
+            SaveScreen(fm, true)
+        } catch (t: Throwable) {
+            println("Could not open the save screen on close (" + t + "), closing anyway")
+            dispose()
+            exitProcess(0)
+        }
     } // GEN-LAST:event_formWindowClosing
 
     private fun checkMapItemStateChanged(evt: ItemEvent) { // GEN-FIRST:event_checkMapItemStateChanged
