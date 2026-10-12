@@ -43,7 +43,7 @@ class MainForm : JFrame() {
     private var checkMap = JCheckBox()
     private var checkWater = JCheckBox()
     private var checkZones = JCheckBox()
-    private var checkFullDistance = JCheckBox()
+    private var farDrawDistanceItem = JCheckBoxMenuItem()
     private var comboIPLType = JComboBox<String>()
     private var gLCanvas1 = GLCanvas()
     private var jButton1 = JButton()
@@ -59,6 +59,7 @@ class MainForm : JFrame() {
     private var idesJList = JList<String>()
     private var fileMenu = JMenu()
     private var editMenu = JMenu()
+    private var viewMenu = JMenu()
     private var helpMenu = JMenu()
     private var mainMenuBar = JMenuBar()
     private var aboutMenuItem = JMenuItem()
@@ -190,11 +191,6 @@ class MainForm : JFrame() {
         checkMap.addItemListener { evt -> checkMapItemStateChanged(evt) }
         jCheckBox1.text = "Paths"
         jCheckBox1.isEnabled = false
-        checkFullDistance.text = "Far view"
-        checkFullDistance.toolTipText = "Draw every object of the selected IPLs, ignoring the draw distance from the IDE"
-        checkFullDistance.isSelected = true
-        checkFullDistance.addItemListener { evt -> checkFullDistanceItemStateChanged(evt) }
-        glListener.setFullDrawDistance(checkFullDistance.isSelected)
         val jPanel3Layout = GroupLayout(jPanel3)
         jPanel3.layout = jPanel3Layout
         jPanel3Layout.setHorizontalGroup(
@@ -214,7 +210,6 @@ class MainForm : JFrame() {
                                 .addGroup(
                                     jPanel3Layout.createSequentialGroup().addComponent(checkZones)
                                         .addGap(18, 18, 18).addComponent(jCheckBox1)
-                                        .addGap(18, 18, 18).addComponent(checkFullDistance)
                                 )
                         )
                         .addContainerGap(81, Short.MAX_VALUE.toInt())
@@ -234,7 +229,6 @@ class MainForm : JFrame() {
                         .addGroup(
                             jPanel3Layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
                                 .addComponent(checkZones).addComponent(jCheckBox1)
-                                .addComponent(checkFullDistance)
                         )
                 )
         )
@@ -930,6 +924,14 @@ class MainForm : JFrame() {
         mapCleanerMenuItem.isEnabled = false
         editMenu.add(mapCleanerMenuItem)
         mainMenuBar.add(editMenu)
+        viewMenu.text = "View"
+        farDrawDistanceItem.text = "Far Draw Distance"
+        farDrawDistanceItem.toolTipText = "Draw every object of the selected IPLs, ignoring the draw distance from the IDE"
+        farDrawDistanceItem.isSelected = true
+        farDrawDistanceItem.addItemListener { evt -> farDrawDistanceItemStateChanged(evt) }
+        viewMenu.add(farDrawDistanceItem)
+        mainMenuBar.add(viewMenu)
+        glListener.setFullDrawDistance(farDrawDistanceItem.isSelected)
         helpMenu.text = "Help"
         aboutMenuItem.text = "About"
         aboutMenuItem.addActionListener { evt -> jMenuItem1ActionPerformed(evt) }
@@ -1182,8 +1184,8 @@ class MainForm : JFrame() {
         glListener.displayWater = checkWater.isSelected
     } // GEN-LAST:event_checkWaterItemStateChanged
 
-    private fun checkFullDistanceItemStateChanged(evt: ItemEvent) {
-        glListener.setFullDrawDistance(checkFullDistance.isSelected)
+    private fun farDrawDistanceItemStateChanged(evt: ItemEvent) {
+        glListener.setFullDrawDistance(farDrawDistanceItem.isSelected)
     }
 
     private fun listIPLValueChanged(evt: ListSelectionEvent) {
