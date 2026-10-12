@@ -23,3 +23,6 @@ build/
 # Shadow-Mapper settings
 settings.ini
 installs.ini
+
+# Local development notes (build log, probes, handoff docs) — never committed
+development/
