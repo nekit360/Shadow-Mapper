@@ -6,55 +6,33 @@ import nl.shadowlink.tools.shadowlib.model.model.TextureResolver
 import nl.shadowlink.tools.shadowlib.texturedic.Texture
 import nl.shadowlink.tools.shadowlib.texturedic.TextureDic
 import java.nio.ByteBuffer
-import java.util.IdentityHashMap
 
 /**
- * Uploads the dictionaries of the map to GL and hands the texture ids to the models.
+ * Uploads the textures of the map to GL and hands the texture ids to the models.
  *
  * In GTA: IV a shader does not point at a texture but names it ("TextureSampler" holds the name of the
  * diffuse map, stored in the .wdr), and the same name can live in the dictionary embedded in the model
  * or in the TXD of its .ide entry - in NJ_01 the embedded dictionary alone answers only 43 % of the
  * names, the .ide TXD answers the rest. The renderer therefore asks each attached dictionary in turn.
  *
- * Only the textures a model really asks for are uploaded, and each one only once: uploading every
- * dictionary whole would put hundreds of megabytes of unused textures on the card.
+ * Only the textures a model really asks for are uploaded, each one only once (the id is stored on the
+ * [Texture] itself), and the cache holds nothing but the ids it created: the memory of a dictionary is
+ * released together with the model that brought it in. Holding the dictionaries here instead made a load
+ * of the whole map (all 481 IPLs) die with `OutOfMemoryError` after a few gigabytes.
  *
  * @author Shadow-Link
  */
 class GlTextureCache(private val gl: GL2) : TextureResolver {
 
-    /** the part of a dictionary that is needed at render time: names and the ids handed out so far */
-    private inner class Dictionary(val dic: TextureDic) {
-        private val texturesByName = HashMap<String, Texture>(dic.textures.size * 2)
-        private val glIds = HashMap<String, Int>()
+    /** the GL names this cache created, so a reload can delete exactly them (ints, nothing else) */
+    private val createdIds = ArrayList<Int>()
 
-        init {
-            dic.textures.forEach { texturesByName[it.diffuseTexName.lowercase()] = it }
-        }
-
-        /** @return the GL id, 0 when this dictionary has no texture with that name */
-        fun resolve(name: String): Int {
-            val key = name.lowercase()
-            val cached = glIds[key]
-            if (cached != null) {
-                return cached
-            }
-            val texture = texturesByName[key] ?: return 0
-            val id = texture.uploadToGl(gl)
-            glIds[key] = id
-            uploadedTextures++
-            uploadedBytes += texture.data.size.toLong()
-            return id
-        }
-
-        fun ids(): IntArray = glIds.values.toIntArray()
-    }
-
-    private val dictionaries = IdentityHashMap<TextureDic, Dictionary>()
+    /** the dictionaries that were asked for a name, by file name - for the log, and it holds no data */
+    private val dictionaryNames = HashSet<String>()
 
     /** how many dictionaries were asked for something */
-    var dictionariesUsed = 0
-        private set
+    val dictionariesUsed: Int
+        get() = dictionaryNames.size
 
     /** how many textures were actually put on the card */
     var uploadedTextures = 0
@@ -88,33 +66,34 @@ class GlTextureCache(private val gl: GL2) : TextureResolver {
         get() = missingNames.size
 
     override fun resolve(dictionary: TextureDic, textureName: String): Int {
+        dictionaryNames.add(dictionary.fileName.lowercase())
         requestedNames.add(textureName.lowercase())
-        val cache = dictionaries[dictionary] ?: Dictionary(dictionary).also {
-            dictionaries[dictionary] = it
-            dictionariesUsed++
-        }
-        val id = cache.resolve(textureName)
-        if (id != 0) {
-            bound++
-        } else {
+        val texture = dictionary.findTexture(textureName)
+        if (texture == null) {
             missing++
             missingNames.add(textureName)
+            return 0
         }
-        return id
+        if (texture.glTextureId == 0) {
+            texture.glTextureId = texture.uploadToGl(gl)
+            createdIds.add(texture.glTextureId)
+            uploadedTextures++
+            uploadedBytes += texture.data.size.toLong()
+        }
+        bound++
+        return texture.glTextureId
     }
 
     /** Deletes every texture this cache put on the card (the map was released/reloaded). */
     fun dispose() {
-        dictionaries.values.forEach { dictionary ->
-            val ids = dictionary.ids()
-            if (ids.isNotEmpty()) {
-                gl.glDeleteTextures(ids.size, ids, 0)
-            }
+        if (createdIds.isNotEmpty()) {
+            val ids = createdIds.toIntArray()
+            gl.glDeleteTextures(ids.size, ids, 0)
+            createdIds.clear()
         }
-        dictionaries.clear()
+        dictionaryNames.clear()
         requestedNames.clear()
         missingNames.clear()
-        dictionariesUsed = 0
         uploadedTextures = 0
         uploadedBytes = 0
         bound = 0
