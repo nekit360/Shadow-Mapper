@@ -24,7 +24,7 @@ import nl.shadowlink.tools.shadowlib.utils.GameType
  * * a name whose dictionary has been dropped is served by parsing that one dictionary again (~10 ms).
  */
 class ImageDictionaryCache(
-    private val rf: ReadFunctions,
+    private val rf: ReadFunctions?,
     private val dictionaries: List<ImgItem>,
     private val gameType: GameType
 ) {
@@ -84,6 +84,7 @@ class ImageDictionaryCache(
 
     private fun parse(offset: Int): TextureDic? {
         val item = byOffset[offset] ?: return null
+        val rf = rf ?: return null
         val dictionary = try {
             rf.seek(item.offset)
             val br: ByteReader = rf.getByteReader(item.size)

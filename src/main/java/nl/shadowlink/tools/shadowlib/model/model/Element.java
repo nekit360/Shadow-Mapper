@@ -75,9 +75,13 @@ public class Element {
     public void bindTextures(TextureResolver resolver) {
         for (int i = 0; i < shaders.size(); i++) {
             Shader shader = shaders.get(i);
-            String textureName = shader.getTextureName();
             int glTex = 0;
-            if (textureName != null && !textureName.isEmpty()) {
+            // a shader can name its diffuse map under more than one parameter (a model's two shaders name
+            // the same texture under "TextureSampler" and under 0xD52B11DF), and a name may be in only one
+            // of the dictionaries the model has: try them in order, not just the first
+            java.util.List<String> names = shader.getTextureNames();
+            for (int n = 0; n < names.size() && glTex == 0; n++) {
+                String textureName = names.get(n);
                 for (int d = 0; d < textureDictionaries.size() && glTex == 0; d++) {
                     glTex = resolver.resolve(textureDictionaries.get(d), textureName);
                 }
@@ -85,8 +89,35 @@ public class Element {
                     glTex = resolver.resolve(null, textureName);
                 }
             }
+            if (names.isEmpty()) {
+                // a shader without a diffuse map draws with the default (white) texture: worth counting,
+                // the map is not white where the game is not white either
+                shadersWithoutTextureName++;
+                if (unknownShaderParams.size() < 8) {
+                    unknownShaderParams.add(shader.getParams());
+                }
+            }
+            if (glTex == 0) {
+                shadersWithoutTexture++;
+            }
             shader.setGLTex(glTex);
         }
+    }
+
+    /** shader slots that carry no diffuse map at all (they render with the default texture) */
+    public static int shadersWithoutTextureName = 0;
+
+    /** shader slots whose name matched no dictionary */
+    public static int shadersWithoutTexture = 0;
+
+    /** the parameters of the first shaders that had no diffuse map, for the log */
+    public static final java.util.List<String> unknownShaderParams = new java.util.ArrayList<String>();
+
+    /** Forgets what the last load counted. */
+    public static void resetTextureDiagnostics() {
+        shadersWithoutTextureName = 0;
+        shadersWithoutTexture = 0;
+        unknownShaderParams.clear();
     }
 
     /**
@@ -122,6 +153,32 @@ public class Element {
     public void createShader(String textureName) {
         Shader temp = new Shader();
         temp.setTextureName(textureName == null ? "" : textureName);
+        shaders.add(temp);
+    }
+
+    /**
+     * Create a new shader with a texture name and a description of the .wdr shader it comes from
+     *
+     * @param textureName the name of the texture
+     * @param params      the parameters of the .wdr shader, see {@link Shader#getParams()}
+     */
+    public void createShader(String textureName, String params) {
+        Shader temp = new Shader();
+        temp.setTextureName(textureName == null ? "" : textureName);
+        temp.setParams(params);
+        shaders.add(temp);
+    }
+
+    /**
+     * Create a new shader from the diffuse map names of a .wdr shader
+     *
+     * @param textureNames every name the .wdr shader carries for its diffuse map, preferred one first
+     * @param params       the parameters of the .wdr shader, see {@link Shader#getParams()}
+     */
+    public void createShader(java.util.List<String> textureNames, String params) {
+        Shader temp = new Shader();
+        temp.setTextureNames(textureNames);
+        temp.setParams(params);
         shaders.add(temp);
     }
 

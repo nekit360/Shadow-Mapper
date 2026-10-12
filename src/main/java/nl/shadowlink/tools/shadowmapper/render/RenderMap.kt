@@ -7,6 +7,7 @@ import nl.shadowlink.tools.io.Vector3D
 import nl.shadowlink.tools.shadowlib.ide.ItemObject
 import nl.shadowlink.tools.shadowlib.img.ImgItem
 import nl.shadowlink.tools.shadowlib.ipl.Item_INST
+import nl.shadowlink.tools.shadowlib.model.model.Element
 import nl.shadowlink.tools.shadowlib.model.model.Model
 import nl.shadowlink.tools.shadowlib.texturedic.TextureDic
 import nl.shadowlink.tools.shadowlib.utils.GameType
@@ -162,7 +163,15 @@ class RenderMap(
         var phase2Seen = 0
         progressDone = 100
         progressListener?.invoke(progressDone, progressTotal)
+        // a name that neither the model nor its own image has may live in a neighbouring image (the game
+        // streams the district around it) - see NeighbourDictionaries, which lives for the whole load so
+        // that an image that had to be searched once is not searched again for the next district
+        val neighbours = NeighbourDictionaries(fm, gameType)
+        var fromNeighbour = 0
+        Element.resetTextureDiagnostics()
+        val whiteModels = ArrayList<String>()
         for (imgNumber in fm.imgs.indices) {
+            val currentImage = fm.imgs[imgNumber].fileName
             val rf = ReadFunctions(fm.imgs[imgNumber].path)
             println("Opened: " + fm.imgs[imgNumber].fileName)
             // In GTA: IV a shader only names its texture and the game resolves that name against what is
@@ -173,7 +182,11 @@ class RenderMap(
             // with the size of the image.
             val imageDictionaries =
                 ImageDictionaryCache(rf, fm.imgs[imgNumber].getItemsOfType(".wtd"), gameType)
-            glTextures.onNameMissing = { name -> imageDictionaries.dictionaryWith(name) }
+            glTextures.onNameMissing = { name ->
+                val dictionary = imageDictionaries.dictionaryWith(name)
+                if (dictionary != null) dictionary
+                else neighbours.dictionaryWith(name, currentImage)?.also { fromNeighbour++ }
+            }
             for (i in ideList.indices) {
                 phase2Seen++
                 if (phase2Seen % 200 == 0) {
@@ -216,7 +229,12 @@ class RenderMap(
                             }
                             // the model knows its own dictionary (embedded in the .wdr) and now the one
                             // of its .ide entry as well: hand both to GL and let the shader names match
+                            val whiteBefore = Element.shadersWithoutTextureName + Element.shadersWithoutTexture
                             mdl?.bindTextures(glTextures)
+                            val whiteAfter = Element.shadersWithoutTextureName + Element.shadersWithoutTexture
+                            if (whiteAfter > whiteBefore && whiteModels.size < 16) {
+                                whiteModels.add(itemName + " (+" + (whiteAfter - whiteBefore) + ")")
+                            }
                         } catch (t: Throwable) {
                             println("Failed to load " + itemName + ": " + t)
                             mdl = null
@@ -243,6 +261,7 @@ class RenderMap(
             imageDictionaries.clear()
         }
 
+        neighbours.clear()
         println("textures: " + glTextures.uploadedTextures + " uploaded ("
             + glTextures.uploadedBytes / 1024 + " KiB) from " + glTextures.dictionariesUsed
             + " dictionaries, " + glTextures.bound + " shaders textured (" + glTextures.fromImage
@@ -250,6 +269,18 @@ class RenderMap(
             + glTextures.missingNameCount + " of " + glTextures.requestedCount + " distinct names)")
         if (glTextures.missingExamples.isNotEmpty()) {
             println("   names no attached dictionary has: " + glTextures.missingExamples.joinToString(", "))
+        }
+        if (fromNeighbour > 0 || neighbours.searched.isNotEmpty()) {
+            println("   " + fromNeighbour + " shaders textured from a neighbouring image ("
+                + neighbours.searched.joinToString(", ") + ")")
+        }
+        println("   shader slots without a diffuse map: " + Element.shadersWithoutTextureName
+            + ", with a name no dictionary has: " + Element.shadersWithoutTexture)
+        if (Element.unknownShaderParams.isNotEmpty()) {
+            Element.unknownShaderParams.forEach { println("   " + it) }
+        }
+        if (whiteModels.isNotEmpty()) {
+            println("   models that got a shader without a texture: " + whiteModels.joinToString(", "))
         }
         progressDone = progressTotal
         progressListener?.invoke(progressDone, progressTotal)

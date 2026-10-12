@@ -153,8 +153,9 @@ public class Model {
             // this list, so entries must not be dropped when a shader has no texture
             for (int i = 0; i < sys.shaderGroup.Shaders.Count; i++) { // create shaders
                 ShaderFx shaderFx = sys.shaderGroup.Shaders._items.get(i);
-                ShaderParamTexture textureParam = shaderFx.shader.getTextureParam();
-                element.createShader(textureParam == null ? null : textureParam.TextureName);
+                java.util.List<String> textureNames = shaderFx.shader.getTextureNames();
+                element.createShader(textureNames,
+                    textureNames.isEmpty() ? shaderFx.shader.describeParams() : null);
             }
         }
 
