@@ -39,6 +39,18 @@ class CheckListManager<T>(
         toggleSelection(index)
     }
 
+    /** Tick or untick an entry from the outside, keeping the painted checkbox in sync. */
+    fun setSelected(index: Int, selected: Boolean) {
+        if (index < 0) return
+        if (selectionModel.isSelectedIndex(index) == selected) return
+        if (selected) {
+            selectionModel.addSelectionInterval(index, index)
+        } else {
+            selectionModel.removeSelectionInterval(index, index)
+        }
+        onSelectionToggled(index, selected)
+    }
+
     override fun valueChanged(e: ListSelectionEvent) {
         list.repaint(list.getCellBounds(e.firstIndex, e.lastIndex))
     }

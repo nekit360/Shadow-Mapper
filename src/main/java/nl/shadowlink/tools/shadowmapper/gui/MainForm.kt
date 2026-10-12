@@ -1264,7 +1264,20 @@ class MainForm : JFrame() {
 
     private fun listSceneMouseClicked(evt: MouseEvent) {
         if (evt.clickCount == 2) {
-            val instance = fm.ipls[listScene.selectedIndex].itemsInst[0]
+            val index = listScene.selectedIndex
+            if (index < 0) return
+            val ipl = fm.ipls[index]
+            if (ipl.itemsInst.isEmpty()) {
+                println("Nothing to focus on in " + ipl.fileName + ": this file has no instances")
+                return
+            }
+            // Only ticked IPLs are loaded and drawn, so focusing on an unticked one would leave the
+            // 3D view empty: tick it and let the map reload before moving the camera there.
+            if (!ipl.selected) {
+                checkList?.setSelected(index, true)
+                glListener.reloadMap()
+            }
+            val instance = ipl.itemsInst[0]
             glListener.camera.pos.x = instance.position.x
             glListener.camera.pos.z = 0 - instance.position.y
             glListener.camera.pos.y = instance.position.z
