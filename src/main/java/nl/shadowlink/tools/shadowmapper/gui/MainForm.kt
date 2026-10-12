@@ -119,7 +119,9 @@ class MainForm : JFrame() {
         this.extendedState = MAXIMIZED_BOTH
         animator = FPSAnimator(gLCanvas1, 60, true)
         animator.start()
-        glListener.setCanvasPosition(gLCanvas1.location)
+        // The canvas position for the drag warp is taken on every mouse press (see
+        // gLCanvas1MousePressed): it has to be the position ON SCREEN, because it is handed to
+        // java.awt.Robot.mouseMove, and it is only valid once the window is up.
         this.isVisible = true
         InstallDialog { install: Install ->
             val loadingDialog = LoadingDialog()
@@ -1118,6 +1120,10 @@ class MainForm : JFrame() {
 
     private fun gLCanvas1MousePressed(evt: MouseEvent) { // GEN-FIRST:event_gLCanvas1MousePressed
         println("Set pos " + evt.x + ", " + evt.y)
+        // Screen coordinates: the drag warp feeds these to Robot.mouseMove. getLocation() is
+        // relative to the window, which made the cursor land away from the press point and pushed
+        // the camera pitch up on every event (it cannot be queried before the window is visible).
+        glListener.setCanvasPosition(gLCanvas1.locationOnScreen)
         glListener.setCurrentMousePos(evt.point)
     } // GEN-LAST:event_gLCanvas1MousePressed
 
