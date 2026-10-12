@@ -36,6 +36,8 @@ class GlListener(
     private val camZoomSpeed = 0.5f
     private var wireFrame = false
     private var pick = false
+    /** How many frame failures have been reported, so a broken frame cannot flood the console. */
+    private var renderErrors = 0
 
     @JvmField
     var displayWater = true
@@ -119,8 +121,24 @@ class GlListener(
 
     override fun display(drawable: GLAutoDrawable) {
         val gl = drawable.gl.gL2
-        val glu = GLU()
         gl.glClear(GL.GL_COLOR_BUFFER_BIT or GL.GL_DEPTH_BUFFER_BIT)
+        // Nothing is loaded yet while the install is read in another thread, and the lists being drawn
+        // are still growing then: drawing them throws ConcurrentModificationException, and an escaping
+        // exception kills the animator thread, which leaves the 3D view dead until a restart.
+        if (fm.loading) return
+        try {
+            drawFrame(drawable, gl)
+        } catch (ex: Throwable) {
+            if (renderErrors < 5) {
+                println("Drawing a frame failed: " + ex)
+                renderErrors++
+            }
+        }
+    }
+
+    /** One frame of the render loop; kept separate so a failure cannot take the animator with it. */
+    private fun drawFrame(drawable: GLAutoDrawable, gl: GL2) {
+        val glu = GLU()
         if (pick) startPicking(gl, mousePos.x, mousePos.y)
         gl.glLoadIdentity()
         glu.gluLookAt(

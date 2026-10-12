@@ -36,6 +36,15 @@ class FileManager : Thread() {
     @JvmField
     var gtaDat: GtaDat? = null
 
+    /**
+     * True while the install is being read. The lists below are filled from this thread while the
+     * render loop may be drawing them, which throws ConcurrentModificationException and used to kill
+     * the animator thread; the renderer checks this flag and skips drawing until the load is over.
+     */
+    @Volatile
+    @JvmField
+    var loading = false
+
     @JvmField
     var ipls = mutableListOf<Ipl>()
 
@@ -430,7 +439,12 @@ class FileManager : Thread() {
     }
 
     override fun run() {
-        startLoading()
+        loading = true
+        try {
+            startLoading()
+        } finally {
+            loading = false
+        }
     }
 }
 
