@@ -46,16 +46,40 @@ public class Compression {
 
     public byte[] decompress(byte[] source, int totalSize) {
         byte[] dataBuffer = new byte[totalSize+1];
+        lastInflated = 0;
+        lastComplete = false;
         try {
             Inflater inflater = new Inflater(true);
             inflater.setInput(source);
-            inflater.inflate(dataBuffer);
+            // a single inflate() call returns as soon as it runs out of input or output, which is
+            // not the same as the end of the stream: keep calling until it really finished
+            while (!inflater.finished() && lastInflated < dataBuffer.length) {
+                int produced = inflater.inflate(dataBuffer, lastInflated, dataBuffer.length - lastInflated);
+                if (produced == 0) {
+                    if (inflater.needsInput() || inflater.needsDictionary()) break;
+                }
+                lastInflated += produced;
+            }
+            lastComplete = inflater.finished();
             inflater.end();
         } catch (DataFormatException ex) {
             Logger.getLogger(Compression.class.getName()).log(Level.SEVERE, null, ex);
         }
         //writeToFile(dataBuffer);
         return dataBuffer;
+    }
+
+    private int lastInflated = 0;
+    private boolean lastComplete = false;
+
+    /** bytes the last decompress() produced */
+    public int getLastInflated() {
+        return lastInflated;
+    }
+
+    /** whether the last decompress() saw the end of the compressed stream */
+    public boolean isLastComplete() {
+        return lastComplete;
     }
 
     /*public void writeToFile(byte[] source){

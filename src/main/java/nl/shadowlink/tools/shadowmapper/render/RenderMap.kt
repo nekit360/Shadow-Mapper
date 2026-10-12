@@ -274,8 +274,13 @@ class RenderMap(
             println("   names no attached dictionary has: " + glTextures.missingExamples.joinToString(", "))
         }
         if (fromNeighbour > 0 || neighbours.searched.isNotEmpty()) {
-            println("   " + fromNeighbour + " shaders textured from a neighbouring image ("
+            println("   " + (fromNeighbour - neighbours.hitsFromGlobal)
+                + " shaders textured from a neighbouring image ("
                 + neighbours.searched.joinToString(", ") + ")")
+        }
+        if (neighbours.hitsFromGlobal > 0) {
+            println("   " + neighbours.hitsFromGlobal + " from the global texture pack ("
+                + neighbours.globals.joinToString(", ") + ")")
         }
         println("   shader slots without a diffuse map: " + Element.shadersWithoutTextureName
             + ", with a name no dictionary has: " + Element.shadersWithoutTexture)

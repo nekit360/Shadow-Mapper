@@ -153,6 +153,11 @@ class ByteReader(
         return stream
     }
 
+    /** the bytes from the current offset to the end of the buffer */
+    fun readRest(): ByteArray {
+        return toArray(currentOffset, stream.size)
+    }
+
     fun toArray(start: Int, end: Int): ByteArray {
         val retSize = end - start
         val retStream = ByteArray(retSize)

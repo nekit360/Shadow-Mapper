@@ -32,6 +32,9 @@ class NeighbourDictionaries(
     /** how many further images may be indexed for this load */
     var maxImages = 16
 
+    /** how many global texture packs may be indexed (there is one: `gtxd.img`) */
+    var maxGlobalImages = 1
+
     /** how many images may be indexed for the name-prefix hint (each one only parses the matching .wtd) */
     var maxPrefixedImages = 8
 
@@ -41,10 +44,17 @@ class NeighbourDictionaries(
     /** the images that were actually searched, for the log */
     val searched = ArrayList<String>()
 
+    /** the global packs that were indexed, for the log */
+    val globals = ArrayList<String>()
+
+    /** how many names were answered by a global pack rather than by the name group */
+    var hitsFromGlobal = 0
+        private set
+
     /**
      * The dictionary of a neighbouring image that holds [name].
      *
-     * Two things are tried, in this order, because both are cheap where the full scan is not:
+     * Three things are tried, in this order, because all of them are cheaper than the full scan:
      *
      * 1. the **name of the dictionary**: GTA: IV names a texture dictionary after the models and district
      *    it belongs to, and a texture carries that prefix (`nj01_road1crossing2` lives in a `nj01_*.wtd`,
@@ -52,7 +62,13 @@ class NeighbourDictionaries(
      *    a shared prefix of six characters or more picks one or two files to parse (~10 ms) instead of a
      *    whole image (~1 s) - and it reaches images the group scan never gets to, its own budget being
      *    capped;
-     * 2. the **images of the name group**, one at a time and each parsed only once per load.
+     * 2. the **global texture pack** (`gtxd.img`): the district images do not carry the shared road,
+     *    terrain and LOD textures - `NJ01_Sidewalk1`, `NJ01_Road1Crossing2/3`, `NJ01_Sidewalk5_Variation3`,
+     *    `NJpulskymet01_512` and `lodpulsky05_512` all live in `gtxd.img` (`jersey_roads.wtd`,
+     *    `jersey_highway.wtd`, `jersey_lodpulsky.wtd`), and the name-prefix hint above cannot see them
+     *    because the dictionary names are `jersey_*`. Indexing that one image costs 356 ms for all 19 of
+     *    its dictionaries and 26 MB of texture data, so it is tried before the group;
+     * 3. the **images of the name group**, one at a time and each parsed only once per load.
      *
      * @param current the image being loaded - not searched, its own index is consulted first
      * @return the dictionary, or null when no image of the group has that texture
@@ -77,12 +93,26 @@ class NeighbourDictionaries(
                 }
             }
         }
+        var globalsIndexed = globals.size
+        for (img in fm.imgs) {
+            if (img.fileName == current || !isGlobal(img.fileName)) continue
+            val known = caches.containsKey(img.fileName)
+            if (!known && globalsIndexed >= maxGlobalImages) continue
+            if (!known) globalsIndexed++
+            val dictionary = cacheOrCreate(img, global = true).dictionaryWith(name)
+            if (dictionary != null) {
+                hitsFromGlobal++
+                return dictionary
+            }
+        }
         val group = groupOf(current)
         if (group.isEmpty()) return null
+        var groupIndexed = searched.size
         for (img in fm.imgs) {
             if (img.fileName == current || groupOf(img.fileName) != group) continue
-            val cache = caches[img.fileName]
-            if (cache == null && caches.size >= maxImages) continue
+            val known = caches.containsKey(img.fileName)
+            if (!known && groupIndexed >= maxImages) continue
+            if (!known) groupIndexed++
             val dictionary = cacheOrCreate(img).dictionaryWith(name)
             if (dictionary != null) return dictionary
         }
@@ -96,9 +126,13 @@ class NeighbourDictionaries(
         scanners.values.forEach { it.closeFile() }
         scanners.clear()
         searched.clear()
+        globals.clear()
     }
 
-    private fun cacheOrCreate(img: Img): ImageDictionaryCache {
+    private fun isGlobal(fileName: String): Boolean =
+        GLOBAL_IMAGES.any { it.equals(fileName, ignoreCase = true) }
+
+    private fun cacheOrCreate(img: Img, global: Boolean = false): ImageDictionaryCache {
         caches[img.fileName]?.let { return it }
         val rf: ReadFunctions = try {
             ReadFunctions(img.path)
@@ -107,7 +141,7 @@ class NeighbourDictionaries(
             return ImageDictionaryCache(null, emptyList(), gameType)
         }
         scanners[img.fileName] = rf
-        searched.add(img.fileName)
+        if (global) globals.add(img.fileName) else searched.add(img.fileName)
         val cache = ImageDictionaryCache(rf, img.getItemsOfType(".wtd"), gameType)
         cache.budgetBytes = budgetBytes
         caches[img.fileName] = cache
@@ -117,6 +151,13 @@ class NeighbourDictionaries(
     companion object {
         /** how many leading characters a texture name and a dictionary name must share to be a hint */
         const val PREFIX_MIN = 6
+
+        /**
+         * The game's global texture packs: `pc/data/maps/gtxd.img` holds the textures the districts share
+         * (roads, highway, LOD palettes, terrain). The game has it streamed in every district, which is why
+         * a model of `nj_01.img` names a texture that lives there and not in `nj_01.img`.
+         */
+        val GLOBAL_IMAGES = listOf("gtxd.img")
 
         /**
          * The name group of an image: `nj_01.img` and `nj_liberty.img` are both "nj", `manhat01.img` is
