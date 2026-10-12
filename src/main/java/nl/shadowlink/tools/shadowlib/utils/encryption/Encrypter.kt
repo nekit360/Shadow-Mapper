@@ -10,6 +10,7 @@ class Encrypter(
     private val cipher: Cipher
     
     init {
+        CryptoProvider.ensureRegistered()
         cipher = Cipher.getInstance("Rijndael/ECB/NoPadding").apply {
             init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "Rijndael"))
         }

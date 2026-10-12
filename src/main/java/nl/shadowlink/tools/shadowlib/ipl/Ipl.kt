@@ -71,7 +71,7 @@ class Ipl {
         when (gameType) {
             GameType.GTA_IV -> if (fileName.contains("common")) IplIII().loadPlacement(this) else IplIV(hashTable).loadPlacement(
                 this,
-                printName!!
+                printName ?: fileName
             )
 
             else -> IplIII().loadPlacement(this)

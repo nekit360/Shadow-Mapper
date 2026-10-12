@@ -43,10 +43,14 @@ class GtaDat(
             while (input.readLine().also { line = it } != null) {
                 if (!line!!.startsWith("#") && !line!!.isEmpty()) {
                     val split = line!!.split(" ").dropLastWhile { it.isEmpty() }
-                    val filePath = split[1]
+                    // gta.dat names the on-disk binary streams as .IPL for platform: paths
+                    // (pc/data/maps/**.wpl), but the common: ones really are text .ipl files.
+                    var filePath = split[1]
                         .replace("platform:", "pc")
                         .replace("common:", "common")
-                        .replace("IPL", "WPL")
+                    if (filePath.startsWith("pc")) {
+                        filePath = filePath.replace("IPL", "WPL")
+                    }
                     when (split[0]) {
                         "IMG" -> img.add(filePath)
                         "IDE" -> ide.add(filePath)

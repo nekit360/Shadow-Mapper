@@ -16,6 +16,7 @@ class Decrypter(
     private var tempBuffer = ByteArray(16)
 
     init {
+        CryptoProvider.ensureRegistered()
         cipher = Cipher.getInstance("Rijndael/ECB/NoPadding").apply {
             init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "Rijndael"))
         }

@@ -23,3 +23,9 @@ build/
 # Shadow-Mapper settings
 settings.ini
 installs.ini
+
+# Local launcher (hardcodes this machine's JDK path)
+run-shadow-mapper.cmd
+
+# Local development notes (build log, probes, handoff docs) — never committed
+development/

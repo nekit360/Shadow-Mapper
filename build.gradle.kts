@@ -17,6 +17,7 @@ dependencies {
 
     implementation("org.jogamp.jogl:jogl-all-main:2.3.2")
     implementation("org.jogamp.gluegen:gluegen-rt-main:2.3.2")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.86")
     implementation("org.netbeans.external:AbsoluteLayout:RELEASE150")
 
     testImplementation(kotlin("test"))
