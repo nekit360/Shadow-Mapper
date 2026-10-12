@@ -30,7 +30,10 @@ class NeighbourDictionaries(
     private val scanners = HashMap<String, ReadFunctions>()
 
     /** how many further images may be indexed for this load */
-    var maxImages = 12
+    var maxImages = 16
+
+    /** how many images may be indexed for the name-prefix hint (each one only parses the matching .wtd) */
+    var maxPrefixedImages = 8
 
     /** how much DXT data one searched image may keep (it is only needed to answer a name) */
     var budgetBytes = 16L * 1024 * 1024
@@ -41,10 +44,39 @@ class NeighbourDictionaries(
     /**
      * The dictionary of a neighbouring image that holds [name].
      *
+     * Two things are tried, in this order, because both are cheap where the full scan is not:
+     *
+     * 1. the **name of the dictionary**: GTA: IV names a texture dictionary after the models and district
+     *    it belongs to, and a texture carries that prefix (`nj01_road1crossing2` lives in a `nj01_*.wtd`,
+     *    `lodpulsky05_512` in a `lodpulsky*.wtd`). The item lists of the images are already in memory, so
+     *    a shared prefix of six characters or more picks one or two files to parse (~10 ms) instead of a
+     *    whole image (~1 s) - and it reaches images the group scan never gets to, its own budget being
+     *    capped;
+     * 2. the **images of the name group**, one at a time and each parsed only once per load.
+     *
      * @param current the image being loaded - not searched, its own index is consulted first
      * @return the dictionary, or null when no image of the group has that texture
      */
     fun dictionaryWith(name: String, current: String): TextureDic? {
+        val wanted = normalize(name)
+        if (wanted.length >= PREFIX_MIN) {
+            var prefixedImages = 0
+            for (img in fm.imgs) {
+                if (img.fileName == current) continue
+                val items = img.getItemsOfType(".wtd").filter {
+                    sharedPrefix(wanted, normalize(it.name.substringBeforeLast('.'))) >= PREFIX_MIN
+                }
+                if (items.isEmpty()) continue
+                val known = caches.containsKey(img.fileName)
+                if (!known && prefixedImages >= maxPrefixedImages) continue
+                if (!known) prefixedImages++
+                val cache = cacheOrCreate(img)
+                for (item in items) {
+                    val dictionary = cache.dictionaryNamed(item.name) ?: continue
+                    if (dictionary.findTexture(name) != null) return dictionary
+                }
+            }
+        }
         val group = groupOf(current)
         if (group.isEmpty()) return null
         for (img in fm.imgs) {
@@ -83,6 +115,9 @@ class NeighbourDictionaries(
     }
 
     companion object {
+        /** how many leading characters a texture name and a dictionary name must share to be a hint */
+        const val PREFIX_MIN = 6
+
         /**
          * The name group of an image: `nj_01.img` and `nj_liberty.img` are both "nj", `manhat01.img` is
          * "manhat". A name that starts with something that is not a letter has no group (and no neighbours),
@@ -90,5 +125,17 @@ class NeighbourDictionaries(
          */
         fun groupOf(fileName: String): String =
             fileName.substringBeforeLast('.').takeWhile { it.isLetter() }
+
+        /** A name without case and without separators, so `nj01_road1` and `NJ01_Road1.wtd` compare. */
+        fun normalize(name: String): String =
+            name.lowercase().filter { it.isLetterOrDigit() }
+
+        /** How many leading characters two normalized names share. */
+        fun sharedPrefix(a: String, b: String): Int {
+            val limit = minOf(a.length, b.length)
+            var shared = 0
+            while (shared < limit && a[shared] == b[shared]) shared++
+            return shared
+        }
     }
 }

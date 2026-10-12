@@ -75,6 +75,12 @@ class ImageDictionaryCache(
     /** The dictionary at that `.img` item offset, parsed if it is not in memory. */
     fun dictionaryAt(offset: Int): TextureDic? = retained[offset] ?: parse(offset)
 
+    /** The dictionary with that item name (".wtd" file), parsed if it is not in memory. */
+    fun dictionaryNamed(itemName: String): TextureDic? {
+        val item = dictionaries.firstOrNull { it.name.equals(itemName, ignoreCase = true) } ?: return null
+        return dictionaryAt(item.offset)
+    }
+
     fun clear() {
         retained.clear()
         nameToOffset.clear()

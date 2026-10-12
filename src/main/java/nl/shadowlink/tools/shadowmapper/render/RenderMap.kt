@@ -229,11 +229,14 @@ class RenderMap(
                             }
                             // the model knows its own dictionary (embedded in the .wdr) and now the one
                             // of its .ide entry as well: hand both to GL and let the shader names match
-                            val whiteBefore = Element.shadersWithoutTextureName + Element.shadersWithoutTexture
+                            val noNameBefore = Element.shadersWithoutTextureName
+                            val nameMissBefore = Element.shadersWithoutTexture
                             mdl?.bindTextures(glTextures)
-                            val whiteAfter = Element.shadersWithoutTextureName + Element.shadersWithoutTexture
-                            if (whiteAfter > whiteBefore && whiteModels.size < 16) {
-                                whiteModels.add(itemName + " (+" + (whiteAfter - whiteBefore) + ")")
+                            val noName = Element.shadersWithoutTextureName - noNameBefore
+                            val nameMiss = Element.shadersWithoutTexture - nameMissBefore
+                            if (noName + nameMiss > 0 && whiteModels.size < 16) {
+                                whiteModels.add(itemName + " (no diffuse parameter: " + noName
+                                    + ", name not found: " + nameMiss + ")")
                             }
                         } catch (t: Throwable) {
                             println("Failed to load " + itemName + ": " + t)
