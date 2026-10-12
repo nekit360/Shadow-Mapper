@@ -42,6 +42,19 @@ public class Model {
     }
 
     /**
+     * Resolves the texture every shader asks for against the dictionaries attached to the elements and
+     * stores the GL texture id in the shader. Has to run with the GL context current, before the
+     * display lists are compiled.
+     *
+     * @param resolver supplies the GL ids (see GlTextureCache in Shadow-Mapper)
+     */
+    public void bindTextures(TextureResolver resolver) {
+        for (int i = 0; i < elements.size(); i++) {
+            elements.get(i).bindTextures(resolver);
+        }
+    }
+
+    /**
      * Load a WDD file
      *
      * @param img      Bytereader that contains the wdd file, current offset should be at the start of the wdd
@@ -135,20 +148,13 @@ public class Model {
     private void createModelFromDrawable(Element element, DrawableModel sys, int sysSize, byte[] stream, ByteReader br) {
         ModelFile mf = new ModelFile();
 
-        if (sys.shaderGroupOffset != -1) {
-            for (int i = 0; i < sys.shaderGroup.Shaders.Count; i++) { // create
-                // shaders
-                for (int shaderNames = 0; shaderNames < sys.shaderGroup.Shaders._items.get(i).shader.ShaderParamNames.Count; shaderNames++) {
-                    if (726757629 == sys.shaderGroup.Shaders._items.get(i).shader.ShaderParamNames.Values.get(shaderNames)) {
-                        if (sys.shaderGroup.Shaders._items.get(i).shader.ShaderParamOffsets.Values.get(shaderNames) != -1) {
-                            ShaderParamTexture shader = (ShaderParamTexture) sys.shaderGroup.Shaders._items.get(i).shader.ShaderParams
-                                    .get(shaderNames);
-                            element.createShader(shader.TextureName);
-                            // //Message.displayMsgLow("Found diffusemap: "
-                            // + shader.TextureName);
-                        }
-                    }
-                }
+        if (sys.shaderGroup != null) {
+            // one entry per shader of the group, in group order: a geometry's ShaderMapping indexes
+            // this list, so entries must not be dropped when a shader has no texture
+            for (int i = 0; i < sys.shaderGroup.Shaders.Count; i++) { // create shaders
+                ShaderFx shaderFx = sys.shaderGroup.Shaders._items.get(i);
+                ShaderParamTexture textureParam = shaderFx.shader.getTextureParam();
+                element.createShader(textureParam == null ? null : textureParam.TextureName);
             }
         }
 
@@ -159,7 +165,14 @@ public class Model {
             // model
             for (int i = 0; i < test.Geometries._items.size(); i++) {
                 Geometry geo = test.Geometries._items.get(i);
-                element.createStrip(geo.FaceCount, i);
+                // which shader the geometry uses comes from the model's ShaderMappings: the position
+                // of the geometry in the list is only the same by coincidence (in NJ_01 that is not the
+                // case for 918 of 4455 geometries, and those were textured with the wrong shader)
+                int shaderIndex = i;
+                if (test.ShaderMappings != null && test.ShaderMappings.Count > i) {
+                    shaderIndex = test.ShaderMappings.Values.get(i);
+                }
+                element.createStrip(geo.FaceCount, shaderIndex);
                 // //Message.displayMsgLow("Adding vertices");
 
                 mf.addVertices(element, stream, geo.vertexBuffer.DataOffset + sysSize, geo.indexBuffer.DataOffset + sysSize, geo.VertexCount,

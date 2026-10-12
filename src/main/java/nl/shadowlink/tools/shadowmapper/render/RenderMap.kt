@@ -12,6 +12,7 @@ import nl.shadowlink.tools.shadowlib.texturedic.TextureDic
 import nl.shadowlink.tools.shadowlib.utils.GameType
 import nl.shadowlink.tools.shadowmapper.FileManager
 import nl.shadowlink.tools.shadowmapper.gui.PickingType
+import nl.shadowlink.tools.shadowmapper.utils.GlTextureCache
 import nl.shadowlink.tools.shadowmapper.utils.GlUtil.drawCube
 import java.util.*
 import kotlin.math.sqrt
@@ -26,6 +27,13 @@ class RenderMap(
 ) {
 
     private var glDisplayList: IntArray = IntArray(0)
+
+    /** GL textures of the loaded map; rebuilt on every load so a reload cannot leak them. */
+    private var textureCache: GlTextureCache? = null
+
+    /** The textures of the last load, for the probes and the console line at the end of loadMap. */
+    val textures: GlTextureCache?
+        get() = textureCache
     var reload = false
     var loading = false
     var added = false
@@ -89,6 +97,10 @@ class RenderMap(
     private fun loadMap(gl: GL2) {
         // Clear existing display list
         glDisplayList.forEach { dl -> gl.glDeleteLists(dl, 1) }
+        // and the textures of the previous load: every load builds new dictionaries
+        textureCache?.dispose()
+        val glTextures = GlTextureCache(gl)
+        textureCache = glTextures
 
         // progress is reported on a fixed 0..1000 scale: phase 1 (resolving the instances of the
         // selected IPLs against the IDEs) gets the first 10%, phase 2 (looking for every model in
@@ -195,6 +207,9 @@ class RenderMap(
                                 val txd = TextureDic(texName, br, gameType, true, texItem.size)
                                 mdl?.attachTXD(txd)
                             }
+                            // the model knows its own dictionary (embedded in the .wdr) and now the one
+                            // of its .ide entry as well: hand both to GL and let the shader names match
+                            mdl?.bindTextures(glTextures)
                         } catch (t: Throwable) {
                             println("Failed to load " + itemName + ": " + t)
                             mdl = null
@@ -219,6 +234,14 @@ class RenderMap(
             rf.closeFile()
         }
 
+        println("textures: " + glTextures.uploadedTextures + " uploaded ("
+            + glTextures.uploadedBytes / 1024 + " KiB) from " + glTextures.dictionariesUsed
+            + " dictionaries, " + glTextures.bound + " shaders textured, "
+            + glTextures.missing + " not found (" + glTextures.missingNameCount + " of "
+            + glTextures.requestedCount + " distinct names)")
+        if (glTextures.missingExamples.isNotEmpty()) {
+            println("   names no attached dictionary has: " + glTextures.missingExamples.joinToString(", "))
+        }
         progressDone = progressTotal
         progressListener?.invoke(progressDone, progressTotal)
     }
@@ -264,6 +287,8 @@ class RenderMap(
                 val txd = TextureDic(tempIDE!!.textureName + ".wtd", br, gameType, true, item.size)
                 mdl?.attachTXD(txd)
             }
+            val glTextures = textureCache ?: GlTextureCache(gl).also { textureCache = it }
+            mdl?.bindTextures(glTextures)
             glDisplayList[tempList.size] = gl.glGenLists(1)
             gl.glNewList(glDisplayList[tempList.size], GL2.GL_COMPILE)
             if (mdl != null) {

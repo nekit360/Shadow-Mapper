@@ -13,6 +13,8 @@ public class Element {
     private ArrayList<Strip> strips = new ArrayList();
     private ArrayList<Vertex> vert = new ArrayList();
     private ArrayList<Shader> shaders = new ArrayList();
+    /** Dictionaries offered by attachTXD, tried in that order when a texture name is resolved. */
+    private ArrayList<TextureDic> textureDictionaries = new ArrayList();
 
     private Vertex max = new Vertex(0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
     private Vertex min = new Vertex(0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
@@ -43,7 +45,12 @@ public class Element {
     }
 
     /**
-     * Attaches a TXD to this element
+     * Attaches a TXD to this element.
+     *
+     * The textures are only uploaded and matched to the shaders by
+     * {@link #bindTextures(TextureResolver)}: in GTA: IV a shader names its diffuse map by name, and
+     * that name can live either in the model's own (embedded) dictionary or in the TXD of the .ide
+     * entry, so both have to be offered before anything can be bound.
      */
     public void attachTXD(TextureDic txd) {
         // TODO: Why can this be null?
@@ -51,19 +58,31 @@ public class Element {
             return;
         }
 
-//        for (int i = 0; i < shaders.size(); i++) {
-//            // //Message.displayMsgLow("Started Shader " + i + " name is " + shaders.get(i).getTextureName());
-//            for (int j = 0; j < texNames.length; j++) {
-//                // //Message.displayMsgLow("texName" + j + ": " + texNames[j]);
-//                if (texNames[j] != null) {
-//                    if (shaders.get(i).getTextureName().equalsIgnoreCase(texNames[j])) {
-//                        System.out.println("Connected tex: " + shaders.get(i).getTextureName() + " with " + texNames[j]);
-//                        // //Message.displayMsgLow("Found " + j);
-//                        shaders.get(i).setGLTex(texID[j]);
-//                    }
-//                }
-//            }
-//        }
+        textureDictionaries.add(txd);
+    }
+
+    /**
+     * Resolves the texture name of every shader against the attached dictionaries and stores the GL
+     * texture id in the shader. Runs before the display list of this model is compiled, with the GL
+     * context current.
+     *
+     * @param resolver supplies the GL texture ids, 0 when a dictionary does not have that name
+     */
+    public void bindTextures(TextureResolver resolver) {
+        for (int i = 0; i < shaders.size(); i++) {
+            Shader shader = shaders.get(i);
+            String textureName = shader.getTextureName();
+            int glTex = 0;
+            if (textureName != null && !textureName.isEmpty()) {
+                for (int d = 0; d < textureDictionaries.size(); d++) {
+                    glTex = resolver.resolve(textureDictionaries.get(d), textureName);
+                    if (glTex != 0) {
+                        break;
+                    }
+                }
+            }
+            shader.setGLTex(glTex);
+        }
     }
 
     /**
@@ -98,7 +117,7 @@ public class Element {
      */
     public void createShader(String textureName) {
         Shader temp = new Shader();
-        temp.setTextureName(textureName);
+        temp.setTextureName(textureName == null ? "" : textureName);
         shaders.add(temp);
     }
 
@@ -145,6 +164,7 @@ public class Element {
         vert.clear();
         strips.clear();
         shaders.clear();
+        textureDictionaries.clear();
         hasVertexColors = false;
         polygons = 0;
         vertices = 0;
@@ -465,8 +485,14 @@ public class Element {
     public void render(GL2 gl) {
         if (visible) {
             for (int i = 0; i < strips.size(); i++) {
-                if (shaders.size() > i)
-                    gl.glBindTexture(gl.GL_TEXTURE_2D, shaders.get(strips.get(i).getShaderNumber()).getGLTex());
+                // bind the texture of the shader this strip uses; the guard used to compare the strip
+                // index with the shader count, so a strip beyond the shader list bound the wrong one
+                int shaderIndex = strips.get(i).getShaderNumber();
+                int glTex = 0;
+                if (shaderIndex >= 0 && shaderIndex < shaders.size()) {
+                    glTex = shaders.get(shaderIndex).getGLTex();
+                }
+                gl.glBindTexture(gl.GL_TEXTURE_2D, glTex);
                 strips.get(i).render(gl);
             }
         }

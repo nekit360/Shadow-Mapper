@@ -10,6 +10,13 @@ import java.util.ArrayList;
  * @author Shadow-Link
  */
 public class Shader {
+    /** joaat("TextureSampler") - the name hash of the parameter that holds the diffuse map. */
+    public static final int PARAM_TEXTURE_SAMPLER = 0x2B5170FD;
+
+    private static final int TYPE_TEXTURE = 0;
+    private static final int TYPE_VECTOR = 1;
+    private static final int TYPE_MATRIX = 4;
+
     private int startOffset;
 
     private int VTable;
@@ -43,6 +50,7 @@ public class Shader {
     public SimpleArray<Byte> ShaderParamTypes;
     public SimpleArray<Integer> ShaderParamNames;
 
+    /** One entry per shader parameter, index aligned with ShaderParamNames/Offsets/Types; null when the type is unknown. */
     public ArrayList ShaderParams = new ArrayList();
 
     /* public Dictionary<ParamNameHash, IShaderParam> ShaderParams { get; private set; } public T
@@ -97,24 +105,35 @@ public class Shader {
             if (ShaderParamOffsets.Values.get(i) != -1) {
                 br.setCurrentOffset(ShaderParamOffsets.Values.get(i));
                 switch (ShaderParamTypes.Values.get(i)) {
-                    case 0:
+                    case TYPE_TEXTURE:
                         ShaderParamTexture test = new ShaderParamTexture();
-                        //test.read(br);
+                        // the texture name only exists after read(), so it has to be read here: without
+                        // it every shader of every model ended up with an empty name and no texture
+                        try {
+                            test.read(br);
+                        } catch (RuntimeException e) {
+                            // a parameter that does not parse must not take the whole model down
+                            test.TextureName = "";
+                        }
                         ShaderParams.add(test);
                         break;
-                    case 1:
+                    case TYPE_VECTOR:
                         ShaderParamVector test1 = new ShaderParamVector();
                         //test1.read(br);
                         ShaderParams.add(test1);
                         break;
-                    case 4:
+                    case TYPE_MATRIX:
                         ShaderParamMatrix test2 = new ShaderParamMatrix();
                         // test2.read(br);
                         ShaderParams.add(test2);
                         break;
+                    default:
+                        // keep the list index aligned with ShaderParamNames/Offsets/Types
+                        ShaderParams.add(null);
                 }
             } else {
                 // Message.displayMsgLow("WTF Der zit een shader @ -1 " + Utils.getHexString(startOffset));
+                ShaderParams.add(null);
             }
         }
 
@@ -125,6 +144,21 @@ public class Shader {
          * br.BaseStream.Seek(ShaderParamOffsets[i], SeekOrigin.Begin); obj.read(br); ShaderParams.Add((ParamNameHash)
          * ShaderParamNames[i], obj); } catch { ShaderParams.Add((ParamNameHash) ShaderParamNames[i], null); } } */
         br.setCurrentOffset(save);
+    }
+
+    /**
+     * The diffuse map of this shader: the texture parameter named "TextureSampler".
+     *
+     * @return the parameter, or null when this shader has none (or it did not parse)
+     */
+    public ShaderParamTexture getTextureParam() {
+        for (int i = 0; i < ShaderParamCount && i < ShaderParamNames.Count; i++) {
+            if (ShaderParamNames.Values.get(i) != PARAM_TEXTURE_SAMPLER) continue;
+            if (i < ShaderParams.size() && ShaderParams.get(i) instanceof ShaderParamTexture) {
+                return (ShaderParamTexture) ShaderParams.get(i);
+            }
+        }
+        return null;
     }
 
     public String[] getDataNames() {
