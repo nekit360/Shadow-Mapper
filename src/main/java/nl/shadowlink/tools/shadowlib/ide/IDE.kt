@@ -19,6 +19,15 @@ class IDE(
     private var fileReader: FileReader? = null
     private var input: BufferedReader? = null
     private var readItem = -1 //used to identify what type of section we are reading
+
+    /** Records of [fileName] a reader accepted (a record that threw is counted in [skippedRecords]). */
+    var readRecords = 0
+        private set
+
+    /** Records of [fileName] no reader could read - one unreadable line must not take the map down. */
+    var skippedRecords = 0
+        private set
+
     val itemObjs = mutableListOf<ItemObject>()
     val itemTobj = mutableListOf<ItemTimedObject>()
     val itemTree = mutableListOf<ItemTree>()
@@ -39,7 +48,9 @@ class IDE(
         if (openIDE()) {
             try {
                 var line: String? = null
+                var lineNumber = 0
                 while (input!!.readLine().also { line = it } != null) {
+                    lineNumber++
                     if (readItem == -1) {
                         if (line!!.startsWith("#")) {
                             println("Commentaar: $line")
@@ -80,44 +91,17 @@ class IDE(
                         } else if (line!!.isEmpty()) {
                             println("Empty line")
                         } else {
-                            var item: IdeItem? = null
-                            when (readItem) {
-                                Constants.i2DFX -> item = Item2DFX(gameType)
-                                Constants.iANIM -> item = ItemAnimated(gameType)
-                                Constants.iCARS -> {
-                                    item = ItemCars(gameType)
-                                    itemCars.add(item)
-                                }
-
-                                Constants.iHIER -> item = ItemHier(gameType)
-                                Constants.iMLO -> item = ItemMlo(gameType)
-                                Constants.iOBJS -> {
-                                    item = ItemObject(gameType)
-                                    itemObjs.add(item)
-                                }
-
-                                Constants.iPATH -> item = ItemPath(gameType)
-                                Constants.iPEDS -> item = ItemPeds(gameType)
-                                Constants.iTANM -> item = ItemTimedAnimated(gameType)
-                                Constants.iTOBJ -> {
-                                    item = ItemTimedObject(gameType)
-                                    itemTobj.add(item)
-                                }
-
-                                Constants.iTREE -> item = ItemTree(gameType)
-                                Constants.iTXDP -> {
-                                    item = ItemTxdPack(gameType)
-                                    itemTxdp.add(item)
-                                }
-
-                                Constants.iWEAP -> item = ItemWeapon(gameType)
-                                else -> {}
-                            }
-                            item!!.read(line!!)
+                            readRecord(line!!, lineNumber)
                         }
                     }
                 }
                 closeIDE()
+                if (skippedRecords > 0) {
+                    println(
+                        "Warning: $fileName: $skippedRecords of ${readRecords + skippedRecords} records " +
+                                "could not be read"
+                    )
+                }
             } catch (ex: IOException) {
                 Logger.getLogger(IDE::class.java.name).log(Level.SEVERE, null, ex)
             }
@@ -125,6 +109,62 @@ class IDE(
             //Message.displayMsgHigh("Unable to open file: " + fileName);
         }
         return true
+    }
+
+    /**
+     * Reads one record and stores it. A reader that throws on a shape it does not know used to take the
+     * whole load with it: on the modded install one `OBJS` row with a column missing died inside
+     * `ItemObject.read`, the exception crossed the constructor of this class and the load ended with 0
+     * IPLs and 0 images - an empty map. That one record is skipped and named with its file and line
+     * instead, and the rest of the map loads.
+     *
+     * A record is stored only after it has been read, because the readers fill `lateinit` fields: an
+     * item that failed halfway through would throw later, from somewhere else entirely.
+     */
+    private fun readRecord(line: String, lineNumber: Int) {
+        val item = when (readItem) {
+            Constants.i2DFX -> Item2DFX(gameType)
+            Constants.iANIM -> ItemAnimated(gameType)
+            Constants.iCARS -> ItemCars(gameType)
+            Constants.iHIER -> ItemHier(gameType)
+            Constants.iMLO -> ItemMlo(gameType)
+            Constants.iOBJS -> ItemObject(gameType)
+            Constants.iPATH -> ItemPath(gameType)
+            Constants.iPEDS -> ItemPeds(gameType)
+            Constants.iTANM -> ItemTimedAnimated(gameType)
+            Constants.iTOBJ -> ItemTimedObject(gameType)
+            Constants.iTREE -> ItemTree(gameType)
+            Constants.iTXDP -> ItemTxdPack(gameType)
+            Constants.iWEAP -> ItemWeapon(gameType)
+            else -> return
+        }
+        try {
+            item.read(line)
+        } catch (ex: Exception) {
+            skippedRecords++
+            println(
+                "Warning: $fileName line $lineNumber: skipped a record " +
+                        "(${ex.javaClass.simpleName}: ${ex.message}): $line"
+            )
+            return
+        }
+        readRecords++
+        when (item) {
+            is ItemObject -> {
+                itemObjs.add(item)
+                if (item.relaxedRead) {
+                    println(
+                        "Warning: $fileName line $lineNumber: ${item.modelName}: the objs record carries no " +
+                                "second flags column, its bounds were read one column to the left: $line"
+                    )
+                }
+            }
+
+            is ItemCars -> itemCars.add(item)
+            is ItemTimedObject -> itemTobj.add(item)
+            is ItemTxdPack -> itemTxdp.add(item)
+            else -> {} // sections whose reader keeps nothing but the name are not stored anywhere
+        }
     }
 
     fun findItem(name: String): IdeItem? {

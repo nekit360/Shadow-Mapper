@@ -24,33 +24,36 @@ class ItemTimedObject(private val gameType: GameType) : IdeItem() {
     var WDD: String? = null
     var timedFlags = 0
 
+    /** Set when the row was read with a tolerance rule of [IdeRecord] (see [ItemObject.read]). */
+    var relaxedRead = false
+        private set
+
+    /**
+     * Reads one `TOBJ` row - the same columns as `OBJS` plus the timed flags at the end:
+     * `model, txd, drawDistance, flags1, flags2, bbMin(3), bbMax(3), sphere(4), wdd, timedFlags`.
+     * The tolerance rules are those of [ItemObject.read]: a column that is not an integer where a flag
+     * is expected means the file dropped a flags column, and every following column sits one further
+     * left - including the two behind the bounds.
+     */
     override fun read(line: String) {
-        var line = line
-        line = line.replace(" ", "")
-        val split = line.split(",".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()
+        val record = IdeRecord(line)
+        val split = record.fields
         modelName = split[0]
         textureName = split[1]
         drawDistance = FloatArray(1)
-        drawDistance[0] = java.lang.Float.valueOf(split[2])
-        flag1 = Integer.valueOf(split[3])
-        flag2 = Integer.valueOf(split[4])
-        boundsMin = Vector3D(
-            java.lang.Float.valueOf(split[5]), java.lang.Float.valueOf(split[6]), java.lang.Float.valueOf(
-                split[7]
-            )
-        )
-        boundsMax = Vector3D(
-            java.lang.Float.valueOf(split[8]), java.lang.Float.valueOf(split[9]), java.lang.Float.valueOf(
-                split[10]
-            )
-        )
-        boundsSphere = Vector4D(
-            java.lang.Float.valueOf(split[11]), java.lang.Float.valueOf(split[12]), java.lang.Float.valueOf(
-                split[13]
-            ), java.lang.Float.valueOf(split[14])
-        )
-        WDD = split[15]
-        timedFlags = Integer.valueOf(split[16])
+        drawDistance[0] = record.floatOr(2)
+        flag1 = record.intOr(3, 0)
+        val secondFlag = record.intOrNull(4)
+        val boundsAt = if (secondFlag == null) IdeRecord.BOUNDS_AFTER_ONE_FLAG
+        else IdeRecord.BOUNDS_AFTER_TWO_FLAGS
+        flag2 = secondFlag ?: 0
+        val bounds = record.bounds(boundsAt)
+        boundsMin = bounds.min
+        boundsMax = bounds.max
+        boundsSphere = bounds.sphere
+        WDD = bounds.wdd
+        timedFlags = record.intOr(boundsAt + 11, 0)
+        relaxedRead = record.relaxed || secondFlag == null
     }
 
     fun save(output: BufferedWriter) {

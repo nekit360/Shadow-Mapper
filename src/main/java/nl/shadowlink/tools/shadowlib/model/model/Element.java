@@ -13,6 +13,8 @@ public class Element {
     private ArrayList<Strip> strips = new ArrayList();
     private ArrayList<Vertex> vert = new ArrayList();
     private ArrayList<Shader> shaders = new ArrayList();
+    /** Dictionaries offered by attachTXD, tried in that order when a texture name is resolved. */
+    private ArrayList<TextureDic> textureDictionaries = new ArrayList();
 
     private Vertex max = new Vertex(0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
     private Vertex min = new Vertex(0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
@@ -43,7 +45,12 @@ public class Element {
     }
 
     /**
-     * Attaches a TXD to this element
+     * Attaches a TXD to this element.
+     *
+     * The textures are only uploaded and matched to the shaders by
+     * {@link #bindTextures(TextureResolver)}: in GTA: IV a shader names its diffuse map by name, and
+     * that name can live either in the model's own (embedded) dictionary or in the TXD of the .ide
+     * entry, so both have to be offered before anything can be bound.
      */
     public void attachTXD(TextureDic txd) {
         // TODO: Why can this be null?
@@ -51,19 +58,66 @@ public class Element {
             return;
         }
 
-//        for (int i = 0; i < shaders.size(); i++) {
-//            // //Message.displayMsgLow("Started Shader " + i + " name is " + shaders.get(i).getTextureName());
-//            for (int j = 0; j < texNames.length; j++) {
-//                // //Message.displayMsgLow("texName" + j + ": " + texNames[j]);
-//                if (texNames[j] != null) {
-//                    if (shaders.get(i).getTextureName().equalsIgnoreCase(texNames[j])) {
-//                        System.out.println("Connected tex: " + shaders.get(i).getTextureName() + " with " + texNames[j]);
-//                        // //Message.displayMsgLow("Found " + j);
-//                        shaders.get(i).setGLTex(texID[j]);
-//                    }
-//                }
-//            }
-//        }
+        textureDictionaries.add(txd);
+    }
+
+    /**
+     * Resolves the texture name of every shader against the attached dictionaries and stores the GL
+     * texture id in the shader. Runs before the display list of this model is compiled, with the GL
+     * context current.
+     *
+     * A name that none of the attached dictionaries has is handed to the resolver once more without a
+     * dictionary: in GTA: IV the shader only names its texture and the game looks it up in what is
+     * loaded, so it can live in a dictionary of another model of the same image.
+     *
+     * @param resolver supplies the GL texture ids, 0 when a dictionary does not have that name
+     */
+    public void bindTextures(TextureResolver resolver) {
+        for (int i = 0; i < shaders.size(); i++) {
+            Shader shader = shaders.get(i);
+            int glTex = 0;
+            // a shader can name its diffuse map under more than one parameter (a model's two shaders name
+            // the same texture under "TextureSampler" and under 0xD52B11DF), and a name may be in only one
+            // of the dictionaries the model has: try them in order, not just the first
+            java.util.List<String> names = shader.getTextureNames();
+            for (int n = 0; n < names.size() && glTex == 0; n++) {
+                String textureName = names.get(n);
+                for (int d = 0; d < textureDictionaries.size() && glTex == 0; d++) {
+                    glTex = resolver.resolve(textureDictionaries.get(d), textureName);
+                }
+                if (glTex == 0) {
+                    glTex = resolver.resolve(null, textureName);
+                }
+            }
+            if (names.isEmpty()) {
+                // a shader without a diffuse map draws with the default (white) texture: worth counting,
+                // the map is not white where the game is not white either
+                shadersWithoutTextureName++;
+                if (unknownShaderParams.size() < 8) {
+                    unknownShaderParams.add(shader.getParams());
+                }
+            }
+            if (glTex == 0) {
+                shadersWithoutTexture++;
+            }
+            shader.setGLTex(glTex);
+        }
+    }
+
+    /** shader slots that carry no diffuse map at all (they render with the default texture) */
+    public static int shadersWithoutTextureName = 0;
+
+    /** shader slots whose name matched no dictionary */
+    public static int shadersWithoutTexture = 0;
+
+    /** the parameters of the first shaders that had no diffuse map, for the log */
+    public static final java.util.List<String> unknownShaderParams = new java.util.ArrayList<String>();
+
+    /** Forgets what the last load counted. */
+    public static void resetTextureDiagnostics() {
+        shadersWithoutTextureName = 0;
+        shadersWithoutTexture = 0;
+        unknownShaderParams.clear();
     }
 
     /**
@@ -98,7 +152,33 @@ public class Element {
      */
     public void createShader(String textureName) {
         Shader temp = new Shader();
-        temp.setTextureName(textureName);
+        temp.setTextureName(textureName == null ? "" : textureName);
+        shaders.add(temp);
+    }
+
+    /**
+     * Create a new shader with a texture name and a description of the .wdr shader it comes from
+     *
+     * @param textureName the name of the texture
+     * @param params      the parameters of the .wdr shader, see {@link Shader#getParams()}
+     */
+    public void createShader(String textureName, String params) {
+        Shader temp = new Shader();
+        temp.setTextureName(textureName == null ? "" : textureName);
+        temp.setParams(params);
+        shaders.add(temp);
+    }
+
+    /**
+     * Create a new shader from the diffuse map names of a .wdr shader
+     *
+     * @param textureNames every name the .wdr shader carries for its diffuse map, preferred one first
+     * @param params       the parameters of the .wdr shader, see {@link Shader#getParams()}
+     */
+    public void createShader(java.util.List<String> textureNames, String params) {
+        Shader temp = new Shader();
+        temp.setTextureNames(textureNames);
+        temp.setParams(params);
         shaders.add(temp);
     }
 
@@ -145,6 +225,7 @@ public class Element {
         vert.clear();
         strips.clear();
         shaders.clear();
+        textureDictionaries.clear();
         hasVertexColors = false;
         polygons = 0;
         vertices = 0;
@@ -465,8 +546,14 @@ public class Element {
     public void render(GL2 gl) {
         if (visible) {
             for (int i = 0; i < strips.size(); i++) {
-                if (shaders.size() > i)
-                    gl.glBindTexture(gl.GL_TEXTURE_2D, shaders.get(strips.get(i).getShaderNumber()).getGLTex());
+                // bind the texture of the shader this strip uses; the guard used to compare the strip
+                // index with the shader count, so a strip beyond the shader list bound the wrong one
+                int shaderIndex = strips.get(i).getShaderNumber();
+                int glTex = 0;
+                if (shaderIndex >= 0 && shaderIndex < shaders.size()) {
+                    glTex = shaders.get(shaderIndex).getGLTex();
+                }
+                gl.glBindTexture(gl.GL_TEXTURE_2D, glTex);
                 strips.get(i).render(gl);
             }
         }

@@ -19,6 +19,7 @@ import javax.swing.*
 import javax.swing.event.ChangeEvent
 import javax.swing.event.ListSelectionEvent
 import javax.swing.event.ListSelectionListener
+import kotlin.system.exitProcess
 
 /**
  * @author Shadow-Link
@@ -31,11 +32,13 @@ class MainForm : JFrame() {
 
     private var buttonDelIDEItem = JButton()
     private var buttonDeleteIPLItem = JButton()
+    private var buttonDeselectAllIpls = JButton()
     private var buttonEditIDEItem = JButton()
     private var buttonEditIPLItem = JButton()
     private var buttonGroup1 = ButtonGroup()
     private var buttonNewIDEItem = JButton()
     private var buttonNewIPLItem = JButton()
+    private var buttonSelectAllIpls = JButton()
     private var buttonSelectModel = JButton()
     private var buttonSelectModel1 = JButton()
     private var buttonSelectModel2 = JButton()
@@ -43,6 +46,7 @@ class MainForm : JFrame() {
     private var checkMap = JCheckBox()
     private var checkWater = JCheckBox()
     private var checkZones = JCheckBox()
+    private var farDrawDistanceItem = JCheckBoxMenuItem()
     private var comboIPLType = JComboBox<String>()
     private var gLCanvas1 = GLCanvas()
     private var jButton1 = JButton()
@@ -58,6 +62,7 @@ class MainForm : JFrame() {
     private var idesJList = JList<String>()
     private var fileMenu = JMenu()
     private var editMenu = JMenu()
+    private var viewMenu = JMenu()
     private var helpMenu = JMenu()
     private var mainMenuBar = JMenuBar()
     private var aboutMenuItem = JMenuItem()
@@ -94,6 +99,7 @@ class MainForm : JFrame() {
     private var panelIPL = JPanel()
     private var panelMapper = JPanel()
     private var panelRender = JPanel()
+    private var loadDialog: LoadingDialog? = null
     private var spinnerPosX = JSpinner()
     private var spinnerPosY = JSpinner()
     private var spinnerPosZ = JSpinner()
@@ -119,7 +125,9 @@ class MainForm : JFrame() {
         this.extendedState = MAXIMIZED_BOTH
         animator = FPSAnimator(gLCanvas1, 60, true)
         animator.start()
-        glListener.setCanvasPosition(gLCanvas1.location)
+        // The canvas position for the drag warp is taken on every mouse press (see
+        // gLCanvas1MousePressed): it has to be the position ON SCREEN, because it is handed to
+        // java.awt.Robot.mouseMove, and it is only valid once the window is up.
         this.isVisible = true
         InstallDialog { install: Install ->
             val loadingDialog = LoadingDialog()
@@ -156,6 +164,11 @@ class MainForm : JFrame() {
                 gLCanvas1MouseDragged(evt)
             }
         })
+        gLCanvas1.addMouseWheelListener(object : MouseWheelListener {
+            override fun mouseWheelMoved(evt: MouseWheelEvent) {
+                glListener.mouseWheelMoved(evt)
+            }
+        })
         gLCanvas1.addKeyListener(object : KeyAdapter() {
             override fun keyPressed(evt: KeyEvent) {
                 gLCanvas1KeyPressed(evt)
@@ -163,9 +176,16 @@ class MainForm : JFrame() {
         })
         jButton1.text = "Render"
         jButton1.addActionListener { evt -> jButton1ActionPerformed(evt) }
+        buttonSelectAllIpls.text = "Select all"
+        buttonSelectAllIpls.toolTipText = "Tick every entry of the Scene list (press Render to load them)"
+        buttonSelectAllIpls.addActionListener { evt -> onSelectAllIplsClicked(evt) }
+        buttonDeselectAllIpls.text = "Deselect all"
+        buttonDeselectAllIpls.toolTipText = "Untick every entry of the Scene list"
+        buttonDeselectAllIpls.addActionListener { evt -> onDeselectAllIplsClicked(evt) }
         listScene.model = fm.modelIPL
         checkList = CheckListManager(listScene) { index, isSelected ->
-            fm.ipls[index].selected = isSelected
+            // the list is filled by the loading thread, so an index may be ahead of the objects
+            fm.ipls.getOrNull(index)?.selected = isSelected
         }
         listScene.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(evt: MouseEvent) {
@@ -187,6 +207,16 @@ class MainForm : JFrame() {
         checkMap.addItemListener { evt -> checkMapItemStateChanged(evt) }
         jCheckBox1.text = "Paths"
         jCheckBox1.isEnabled = false
+        glListener.onLoadProgress = { done, total ->
+            // The map is built on the AWT event thread (JOGL dispatches a GLCanvas display there), so
+            // the dialog is updated right here: an invokeLater runnable would only run after the load
+            // had already finished, which is exactly when there is nothing left to watch.
+            if (SwingUtilities.isEventDispatchThread()) {
+                showLoadProgress(done, total)
+            } else {
+                SwingUtilities.invokeLater { showLoadProgress(done, total) }
+            }
+        }
         val jPanel3Layout = GroupLayout(jPanel3)
         jPanel3.layout = jPanel3Layout
         jPanel3Layout.setHorizontalGroup(
@@ -237,6 +267,13 @@ class MainForm : JFrame() {
                     panelRenderLayout.createSequentialGroup().addContainerGap().addComponent(jButton1)
                         .addContainerGap(205, Short.MAX_VALUE.toInt())
                 )
+                .addGroup(
+                    panelRenderLayout.createSequentialGroup().addContainerGap()
+                        .addComponent(buttonSelectAllIpls)
+                        .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
+                        .addComponent(buttonDeselectAllIpls)
+                        .addContainerGap(Short.MAX_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                )
                 .addComponent(jPanel3, GroupLayout.DEFAULT_SIZE, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE.toInt())
                 .addComponent(jScrollPane1, GroupLayout.DEFAULT_SIZE, 282, Short.MAX_VALUE.toInt())
         )
@@ -247,6 +284,11 @@ class MainForm : JFrame() {
                 GroupLayout.Alignment.TRAILING,
                 panelRenderLayout
                     .createSequentialGroup()
+                    .addGroup(
+                        panelRenderLayout.createParallelGroup(GroupLayout.Alignment.BASELINE)
+                            .addComponent(buttonSelectAllIpls).addComponent(buttonDeselectAllIpls)
+                    )
+                    .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
                     .addComponent(jScrollPane1, GroupLayout.DEFAULT_SIZE, 423, Short.MAX_VALUE.toInt())
                     .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
                     .addComponent(
@@ -920,6 +962,14 @@ class MainForm : JFrame() {
         mapCleanerMenuItem.isEnabled = false
         editMenu.add(mapCleanerMenuItem)
         mainMenuBar.add(editMenu)
+        viewMenu.text = "View"
+        farDrawDistanceItem.text = "Far Draw Distance"
+        farDrawDistanceItem.toolTipText = "Draw every object of the selected IPLs, ignoring the draw distance from the IDE"
+        farDrawDistanceItem.isSelected = true
+        farDrawDistanceItem.addItemListener { evt -> farDrawDistanceItemStateChanged(evt) }
+        viewMenu.add(farDrawDistanceItem)
+        mainMenuBar.add(viewMenu)
+        glListener.setFullDrawDistance(farDrawDistanceItem.isSelected)
         helpMenu.text = "Help"
         aboutMenuItem.text = "About"
         aboutMenuItem.addActionListener { evt -> jMenuItem1ActionPerformed(evt) }
@@ -1110,6 +1160,27 @@ class MainForm : JFrame() {
         glListener.reloadMap()
     } // GEN-LAST:event_jButton1ActionPerformed
 
+    private fun onSelectAllIplsClicked(evt: ActionEvent) { // GEN-FIRST:event_onSelectAllIplsClicked
+        setAllIplsSelected(true)
+    } // GEN-LAST:event_onSelectAllIplsClicked
+
+    private fun onDeselectAllIplsClicked(evt: ActionEvent) { // GEN-LAST:event_onDeselectAllIplsClicked
+        setAllIplsSelected(false)
+    } // GEN-LAST:event_onDeselectAllIplsClicked
+
+    /**
+     * Ticks or unticks every entry of the Scene list in one go.
+     *
+     * The files are only marked as selected here - loading them stays with Render, exactly like a single
+     * tick in the list, so ticking "all" does not start a load on its own. The list can hold more rows
+     * than there are IPL objects while the install is still being read, hence the count.
+     */
+    private fun setAllIplsSelected(selected: Boolean) {
+        val entries = minOf(fm.modelIPL.size(), fm.ipls.size)
+        println("Scene list: " + (if (selected) "select" else "deselect") + " all, " + entries + " entries")
+        checkList?.setAllSelected(selected, entries)
+    }
+
     private fun gLCanvas1MouseClicked(evt: MouseEvent) { // GEN-FIRST:event_gLCanvas1MouseClicked
         if (evt.clickCount == 2) {
             glListener.setPick()
@@ -1118,6 +1189,10 @@ class MainForm : JFrame() {
 
     private fun gLCanvas1MousePressed(evt: MouseEvent) { // GEN-FIRST:event_gLCanvas1MousePressed
         println("Set pos " + evt.x + ", " + evt.y)
+        // Screen coordinates: the drag warp feeds these to Robot.mouseMove. getLocation() is
+        // relative to the window, which made the cursor land away from the press point and pushed
+        // the camera pitch up on every event (it cannot be queried before the window is visible).
+        glListener.setCanvasPosition(gLCanvas1.locationOnScreen)
         glListener.setCurrentMousePos(evt.point)
     } // GEN-LAST:event_gLCanvas1MousePressed
 
@@ -1157,7 +1232,17 @@ class MainForm : JFrame() {
     } // GEN-LAST:event_textXKeyTyped
 
     private fun formWindowClosing(evt: WindowEvent) { // GEN-FIRST:event_formWindowClosing
-        SaveScreen(fm, true)
+        // The save screen is a new frame and needs heap; when the JVM is already out of memory (a load
+        // of too many IPLs, for instance) its constructor throws inside the event dispatch, nothing is
+        // shown and the window cannot be closed at all - not even with the X, because the close always
+        // goes through here. Give the close a way out in that case.
+        try {
+            SaveScreen(fm, true)
+        } catch (t: Throwable) {
+            println("Could not open the save screen on close (" + t + "), closing anyway")
+            dispose()
+            exitProcess(0)
+        }
     } // GEN-LAST:event_formWindowClosing
 
     private fun checkMapItemStateChanged(evt: ItemEvent) { // GEN-FIRST:event_checkMapItemStateChanged
@@ -1167,6 +1252,33 @@ class MainForm : JFrame() {
     private fun checkWaterItemStateChanged(evt: ItemEvent) {
         glListener.displayWater = checkWater.isSelected
     } // GEN-LAST:event_checkWaterItemStateChanged
+
+    private fun farDrawDistanceItemStateChanged(evt: ItemEvent) {
+        glListener.setFullDrawDistance(farDrawDistanceItem.isSelected)
+    }
+
+    /**
+     * Drives the loading dialog while Render (or a double click in the Scene list) builds the map.
+     * Always called on the event dispatch thread: the loading thread reports (done, total) and
+     * signals the end by reporting done == total.
+     */
+    private fun showLoadProgress(done: Int, total: Int) {
+        if (done >= total) {
+            loadDialog?.onLoadingFinished()
+            loadDialog = null
+            return
+        }
+        if (loadDialog == null) {
+            if (fm.ipls.none { it.selected }) return // nothing ticked, nothing to wait for
+            loadDialog = LoadingDialog("Loading WPLs")
+            loadDialog!!.toFront()
+        }
+        val dialog = loadDialog ?: return
+        dialog.onLoadingProgress(done, total)
+        // The event dispatch thread is inside the load right now, so the normal repaint queue would
+        // not be flushed until the load ended; paint the dialog synchronously instead.
+        dialog.repaintNow()
+    }
 
     private fun listIPLValueChanged(evt: ListSelectionEvent) {
         fm.updateIPLItemList(listIPL.selectedIndex, comboIPLType.selectedIndex)
@@ -1239,7 +1351,20 @@ class MainForm : JFrame() {
 
     private fun listSceneMouseClicked(evt: MouseEvent) {
         if (evt.clickCount == 2) {
-            val instance = fm.ipls[listScene.selectedIndex].itemsInst[0]
+            val index = listScene.selectedIndex
+            if (index < 0) return
+            val ipl = fm.ipls[index]
+            if (ipl.itemsInst.isEmpty()) {
+                println("Nothing to focus on in " + ipl.fileName + ": this file has no instances")
+                return
+            }
+            // Only ticked IPLs are loaded and drawn, so focusing on an unticked one would leave the
+            // 3D view empty: tick it and let the map reload before moving the camera there.
+            if (!ipl.selected) {
+                checkList?.setSelected(index, true)
+                glListener.reloadMap()
+            }
+            val instance = ipl.itemsInst[0]
             glListener.camera.pos.x = instance.position.x
             glListener.camera.pos.z = 0 - instance.position.y
             glListener.camera.pos.y = instance.position.z

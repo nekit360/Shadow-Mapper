@@ -13,6 +13,7 @@ import java.awt.Point
 import java.awt.Robot
 import java.awt.event.KeyEvent
 import java.awt.event.MouseEvent
+import java.awt.event.MouseWheelEvent
 import java.nio.IntBuffer
 
 /**
@@ -31,8 +32,12 @@ class GlListener(
     private val renderCars: RenderVehicles = RenderVehicles(fm)
 
     private val camSpeed = 0.5f
+    /** Mouse wheel zoom: one notch dollies the camera by this fraction of the view vector. */
+    private val camZoomSpeed = 0.5f
     private var wireFrame = false
     private var pick = false
+    /** How many frame failures have been reported, so a broken frame cannot flood the console. */
+    private var renderErrors = 0
 
     @JvmField
     var displayWater = true
@@ -43,6 +48,16 @@ class GlListener(
 
     @JvmField
     var displayCars = true
+
+    /**
+     * Reports map load progress (done, total) to the GUI. The callback runs on the loading thread,
+     * so the receiver has to hop to the event dispatch thread itself.
+     */
+    var onLoadProgress: ((done: Int, total: Int) -> Unit)? = null
+        set(value) {
+            field = value
+            renderMap.progressListener = value
+        }
     private var mousePos = Point(0, 0)
     private var canvasPos = Point(0, 0)
 
@@ -53,6 +68,14 @@ class GlListener(
     // Used for FPS
     private var fps = 0.0f
     private var previousTime: Long = 0
+
+    companion object {
+        /**
+         * Far clipping plane. The map spans thousands of units, so the previous 1000 clipped
+         * everything beyond a very short distance even when the draw distance limit was off.
+         */
+        private const val FAR_PLANE = 20000.0
+    }
 
     fun keyPressed(evt: KeyEvent) {
         if (evt.keyCode == KeyEvent.VK_W) {
@@ -69,22 +92,28 @@ class GlListener(
         }
     }
 
+    /** Mouse wheel: one notch dollies the camera along the view direction (wheel up = zoom in). */
+    fun mouseWheelMoved(evt: MouseWheelEvent) {
+        camera.moveCamera(camZoomSpeed * -evt.preciseWheelRotation.toFloat())
+    }
+
     fun mouseMoved(evt: MouseEvent) {
+        // The cursor is warped back onto the press point (mousePos) after every event, so the
+        // offset between the event and that point is this step's rotation. Keeping the reference
+        // fixed is what makes the warp's own echo event a no-op (offset 0) instead of a rotation in
+        // reverse. The offset used to include a permanent +41 px from the warp target, which biased
+        // every step downwards: looking up needed a 41 px move per event just to break even.
+        val angleY = (mousePos.x - evt.point.x).toFloat() / 500
+        val angleZ = (mousePos.y - evt.point.y).toFloat() / 500
+
+        // keep the look direction within +-8 units vertically around the eye (the lower bound was a
+        // dead comparison: camera.viewY - camera.viewY < -8 can never be true)
+        val pitch = (camera.viewY + angleZ) - camera.posY
+        camera.viewY = camera.posY + pitch.coerceIn(-8f, 8f)
+        camera.rotateView(-angleY)
+
         try {
-            val robby = Robot()
-            val newMousePos = evt.point
-            robby.mouseMove(canvasPos.x + mousePos.x, canvasPos.y + mousePos.y + 41)
-            val angleY = (mousePos.x - canvasPos.x - (newMousePos.x - canvasPos.x)).toFloat() / 500
-            val angleZ = (mousePos.y - canvasPos.y - (newMousePos.y - canvasPos.y)).toFloat() / 500
-            val viewY = camera.viewY.toDouble()
-            camera.viewY = (viewY + angleZ).toFloat()
-            if (camera.viewY - camera.posY > 8) {
-                camera.viewY = camera.posY + 8
-            }
-            if (camera.viewY - camera.viewY < -8) {
-                camera.viewY = camera.posY - 8
-            }
-            camera.rotateView(-angleY)
+            Robot().mouseMove(canvasPos.x + mousePos.x, canvasPos.y + mousePos.y)
         } catch (ex: AWTException) {
             println(ex)
         }
@@ -92,8 +121,24 @@ class GlListener(
 
     override fun display(drawable: GLAutoDrawable) {
         val gl = drawable.gl.gL2
-        val glu = GLU()
         gl.glClear(GL.GL_COLOR_BUFFER_BIT or GL.GL_DEPTH_BUFFER_BIT)
+        // Nothing is loaded yet while the install is read in another thread, and the lists being drawn
+        // are still growing then: drawing them throws ConcurrentModificationException, and an escaping
+        // exception kills the animator thread, which leaves the 3D view dead until a restart.
+        if (fm.loading) return
+        try {
+            drawFrame(drawable, gl)
+        } catch (ex: Throwable) {
+            if (renderErrors < 5) {
+                println("Drawing a frame failed: " + ex)
+                renderErrors++
+            }
+        }
+    }
+
+    /** One frame of the render loop; kept separate so a failure cannot take the animator with it. */
+    private fun drawFrame(drawable: GLAutoDrawable, gl: GL2) {
+        val glu = GLU()
         if (pick) startPicking(gl, mousePos.x, mousePos.y)
         gl.glLoadIdentity()
         glu.gluLookAt(
@@ -135,7 +180,7 @@ class GlListener(
         gl.glLoadIdentity()
         glu.gluPickMatrix(mouseX.toFloat(), (viewport[3] - mouseY).toFloat(), 5f, 5f, viewport, 0)
         val ratio = (viewport[2] + 0.0).toFloat() / viewport[3]
-        glu.gluPerspective(45.0, ratio.toDouble(), 0.1, 1000.0)
+        glu.gluPerspective(45.0, ratio.toDouble(), 0.1, FAR_PLANE)
         gl.glMatrixMode(GLMatrixFunc.GL_MODELVIEW)
     }
 
@@ -225,7 +270,7 @@ class GlListener(
         gl.glViewport(0, 0, width, height)
         gl.glMatrixMode(GL2.GL_PROJECTION)
         gl.glLoadIdentity()
-        glu.gluPerspective(45.0, h.toDouble(), 0.1, 1000.0)
+        glu.gluPerspective(45.0, h.toDouble(), 0.1, FAR_PLANE)
         gl.glMatrixMode(GL2.GL_MODELVIEW)
         gl.glLoadIdentity()
     }
@@ -263,6 +308,11 @@ class GlListener(
 
     fun setWireFrame(wireFrame: Boolean) {
         this.wireFrame = wireFrame
+    }
+
+    /** false: hide objects farther away than the draw distance the IDE gives them (default). */
+    fun setFullDrawDistance(enabled: Boolean) {
+        renderMap.fullDrawDistance = enabled
     }
 
     fun setPick() {

@@ -43,7 +43,15 @@ public class ResourceFile {
         if (fileSize == -1)
             fileSize = br.moreToRead();
 
-        byte stream[] = _codec.decompress(br.toArray(br.getCurrentOffset(), br.moreToRead()), totalMemSize);
+        // readRest() - toArray wants an *absolute* end offset, passing moreToRead() (a length) as
+        // the end cut the last bytes off the compressed slice. Small resources lost enough of the
+        // stream that it never finished: the dictionary came out as zeros and the first pointer
+        // read threw "Expected an offset" (12 of 107 .wtd in nj_01.img, 32 of 101 in nj_02.img).
+        byte stream[] = _codec.decompress(br.readRest(), totalMemSize);
+        if (!_codec.isLastComplete()) {
+            System.out.println("Resource stream incomplete: inflated " + _codec.getLastInflated()
+                + " of " + totalMemSize + " bytes");
+        }
 
         // Message.displayMsgHigh("System Mem Size: " + _header.GetSystemMemSize());
         // Message.displayMsgHigh("Graphic Mem Size: " + _header.GetGraphicsMemSize());

@@ -7,11 +7,13 @@ import nl.shadowlink.tools.io.Vector3D
 import nl.shadowlink.tools.shadowlib.ide.ItemObject
 import nl.shadowlink.tools.shadowlib.img.ImgItem
 import nl.shadowlink.tools.shadowlib.ipl.Item_INST
+import nl.shadowlink.tools.shadowlib.model.model.Element
 import nl.shadowlink.tools.shadowlib.model.model.Model
 import nl.shadowlink.tools.shadowlib.texturedic.TextureDic
 import nl.shadowlink.tools.shadowlib.utils.GameType
 import nl.shadowlink.tools.shadowmapper.FileManager
 import nl.shadowlink.tools.shadowmapper.gui.PickingType
+import nl.shadowlink.tools.shadowmapper.utils.GlTextureCache
 import nl.shadowlink.tools.shadowmapper.utils.GlUtil.drawCube
 import java.util.*
 import kotlin.math.sqrt
@@ -26,9 +28,22 @@ class RenderMap(
 ) {
 
     private var glDisplayList: IntArray = IntArray(0)
+
+    /** GL textures of the loaded map; rebuilt on every load so a reload cannot leak them. */
+    private var textureCache: GlTextureCache? = null
+
+    /** The textures of the last load, for the probes and the console line at the end of loadMap. */
+    val textures: GlTextureCache?
+        get() = textureCache
     var reload = false
     var loading = false
     var added = false
+    /** Draw every instance of the selected IPLs, ignoring the draw distance from the IDE. */
+    var fullDrawDistance = false
+    /** Progress of loadMap, called from the loading thread: (done, total). */
+    var progressListener: ((Int, Int) -> Unit)? = null
+    private var progressDone = 0
+    private var progressTotal = 0
     var tempIDE: ItemObject? = null
     var tempIPL: Item_INST? = null
 
@@ -56,7 +71,7 @@ class RenderMap(
                     gl.glPushName(iplIndex)
                     ipl.itemsInst.forEachIndexed { instanceIndex, item ->
                         if (!item.name.lowercase(Locale.getDefault()).contains("lod")) {
-                            if (getDistance(camera.pos, item.position) < item.drawDistance) {
+                            if (fullDrawDistance || getDistance(camera.pos, item.position) < item.drawDistance) {
                                 gl.glPushName(instanceIndex)
                                 if (item.selected) {
                                     gl.glColor3f(0.9f, 0f, 0f)
@@ -83,12 +98,30 @@ class RenderMap(
     private fun loadMap(gl: GL2) {
         // Clear existing display list
         glDisplayList.forEach { dl -> gl.glDeleteLists(dl, 1) }
+        // and the textures of the previous load: every load builds new dictionaries
+        textureCache?.dispose()
+        val glTextures = GlTextureCache(gl)
+        textureCache = glTextures
+
+        // progress is reported on a fixed 0..1000 scale: phase 1 (resolving the instances of the
+        // selected IPLs against the IDEs) gets the first 10%, phase 2 (looking for every model in
+        // every image) the rest, so the bar never jumps backwards when the phases change
+        progressTotal = 1000
+        progressDone = 0
+        progressListener?.invoke(0, progressTotal)
+        val instancesTotal = fm.ipls.sumOf { if (it.selected) it.itemsInst.size else 0 }.coerceAtLeast(1)
+        var instancesSeen = 0
 
         val boolList: ArrayList<Boolean> = ArrayList<Boolean>()
         val ideList: ArrayList<ItemObject> = ArrayList<ItemObject>()
         fm.ipls.forEach { ipl ->
             if (ipl.selected) {
                 ipl.itemsInst.forEach { instance ->
+                    instancesSeen++
+                    if (instancesSeen % 200 == 0) {
+                        progressDone = instancesSeen * 100 / instancesTotal
+                        progressListener?.invoke(progressDone, progressTotal)
+                    }
                     var ideNumber = 0
                     var ideItem = fm.ides[ideNumber].findItem(instance.name) as? ItemObject
                     while (ideItem == null) {
@@ -125,10 +158,41 @@ class RenderMap(
         }
         glDisplayList = IntArray(ideList.size + 1)
         println("ideList Size: " + ideList.size)
+        // the rest of the work is scanning every image for every model they may contain
+        val phase2Total = (fm.imgs.size * ideList.size).coerceAtLeast(1)
+        var phase2Seen = 0
+        progressDone = 100
+        progressListener?.invoke(progressDone, progressTotal)
+        // a name that neither the model nor its own image has may live in a neighbouring image (the game
+        // streams the district around it) - see NeighbourDictionaries, which lives for the whole load so
+        // that an image that had to be searched once is not searched again for the next district
+        val neighbours = NeighbourDictionaries(fm, gameType)
+        var fromNeighbour = 0
+        Element.resetTextureDiagnostics()
+        val whiteModels = ArrayList<String>()
         for (imgNumber in fm.imgs.indices) {
+            val currentImage = fm.imgs[imgNumber].fileName
             val rf = ReadFunctions(fm.imgs[imgNumber].path)
             println("Opened: " + fm.imgs[imgNumber].fileName)
+            // In GTA: IV a shader only names its texture and the game resolves that name against what is
+            // streamed, so a model asks for names that live in the dictionary of a neighbouring model
+            // (in NJ_01 the model's own two dictionaries answer 69 % of the names, the rest are in other
+            // .wtd of the same image). ImageDictionaryCache offers the dictionaries of this image by name
+            // and parses them on demand; it keeps only a bounded set of them, so the memory does not grow
+            // with the size of the image.
+            val imageDictionaries =
+                ImageDictionaryCache(rf, fm.imgs[imgNumber].getItemsOfType(".wtd"), gameType)
+            glTextures.onNameMissing = { name ->
+                val dictionary = imageDictionaries.dictionaryWith(name)
+                if (dictionary != null) dictionary
+                else neighbours.dictionaryWith(name, currentImage)?.also { fromNeighbour++ }
+            }
             for (i in ideList.indices) {
+                phase2Seen++
+                if (phase2Seen % 200 == 0) {
+                    progressDone = 100 + phase2Seen * 900 / phase2Total
+                    progressListener?.invoke(progressDone, progressTotal)
+                }
                 if (!boolList[i]) {
                     var modelName = ""
                     var item: ImgItem? = null
@@ -147,7 +211,7 @@ class RenderMap(
                         // .wdr/.wft/.wdd used to abort loadMap() and freeze the 3D view
                         try {
                             rf.seek(item.offset)
-                            var br = rf.getByteReader(item.size)
+                            val br = rf.getByteReader(item.size)
                             if (itemName.endsWith(".wdr", ignoreCase = true)) {
                                 println(itemName)
                                 mdl = Model().loadWDR(br, item.size)
@@ -160,10 +224,19 @@ class RenderMap(
                             val texName = ideList[i].textureName + ".wtd"
                             val texItem = fm.imgs[imgNumber].findItem(texName)
                             if (texItem != null) {
-                                rf.seek(texItem.offset)
-                                br = rf.getByteReader(texItem.size)
-                                val txd = TextureDic(texName, br, gameType, true, texItem.size)
+                                val txd = imageDictionaries.dictionaryAt(texItem.offset)
                                 mdl?.attachTXD(txd)
+                            }
+                            // the model knows its own dictionary (embedded in the .wdr) and now the one
+                            // of its .ide entry as well: hand both to GL and let the shader names match
+                            val noNameBefore = Element.shadersWithoutTextureName
+                            val nameMissBefore = Element.shadersWithoutTexture
+                            mdl?.bindTextures(glTextures)
+                            val noName = Element.shadersWithoutTextureName - noNameBefore
+                            val nameMiss = Element.shadersWithoutTexture - nameMissBefore
+                            if (noName + nameMiss > 0 && whiteModels.size < 16) {
+                                whiteModels.add(itemName + " (no diffuse parameter: " + noName
+                                    + ", name not found: " + nameMiss + ")")
                             }
                         } catch (t: Throwable) {
                             println("Failed to load " + itemName + ": " + t)
@@ -187,7 +260,38 @@ class RenderMap(
                 }
             }
             rf.closeFile()
+            glTextures.onNameMissing = null
+            imageDictionaries.clear()
         }
+
+        neighbours.clear()
+        println("textures: " + glTextures.uploadedTextures + " uploaded ("
+            + glTextures.uploadedBytes / 1024 + " KiB) from " + glTextures.dictionariesUsed
+            + " dictionaries, " + glTextures.bound + " shaders textured (" + glTextures.fromImage
+            + " from another dictionary of the image), " + glTextures.missing + " not found ("
+            + glTextures.missingNameCount + " of " + glTextures.requestedCount + " distinct names)")
+        if (glTextures.missingExamples.isNotEmpty()) {
+            println("   names no attached dictionary has: " + glTextures.missingExamples.joinToString(", "))
+        }
+        if (fromNeighbour > 0 || neighbours.searched.isNotEmpty()) {
+            println("   " + (fromNeighbour - neighbours.hitsFromGlobal)
+                + " shaders textured from a neighbouring image ("
+                + neighbours.searched.joinToString(", ") + ")")
+        }
+        if (neighbours.hitsFromGlobal > 0) {
+            println("   " + neighbours.hitsFromGlobal + " from the global texture pack ("
+                + neighbours.globals.joinToString(", ") + ")")
+        }
+        println("   shader slots without a diffuse map: " + Element.shadersWithoutTextureName
+            + ", with a name no dictionary has: " + Element.shadersWithoutTexture)
+        if (Element.unknownShaderParams.isNotEmpty()) {
+            Element.unknownShaderParams.forEach { println("   " + it) }
+        }
+        if (whiteModels.isNotEmpty()) {
+            println("   models that got a shader without a texture: " + whiteModels.joinToString(", "))
+        }
+        progressDone = progressTotal
+        progressListener?.invoke(progressDone, progressTotal)
     }
 
     private fun loadAddedModel(gl: GL2) {
@@ -231,6 +335,8 @@ class RenderMap(
                 val txd = TextureDic(tempIDE!!.textureName + ".wtd", br, gameType, true, item.size)
                 mdl?.attachTXD(txd)
             }
+            val glTextures = textureCache ?: GlTextureCache(gl).also { textureCache = it }
+            mdl?.bindTextures(glTextures)
             glDisplayList[tempList.size] = gl.glGenLists(1)
             gl.glNewList(glDisplayList[tempList.size], GL2.GL_COMPILE)
             if (mdl != null) {

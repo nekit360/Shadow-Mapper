@@ -25,35 +25,54 @@ class ItemObject(private val gameType: GameType) : IdeItem() {
     var boundsSphere = Vector4D(0.0f, 0.0f, 0.0f, 0.0f)
     var WDD: String? = null
 
+    /**
+     * Set when this row did not have the standard column list and was read with one of the tolerance
+     * rules of [IdeRecord] - today that means the `flags2` column was missing (see [read]). `IDE`
+     * names such records in its log, probes count them.
+     */
+    var relaxedRead = false
+        private set
+
+    /**
+     * Reads one `OBJS` row: `model, txd, drawDistance, flags1, flags2, bbMin(3), bbMax(3), sphere(4), wdd`.
+     *
+     * A row is not always that list. Measured on the modded install: `us_pavement_01, unosti_square,
+     * 3000, 0, -85.3101, ...` - the column where `flags2` belongs holds the first bound instead,
+     * because the tool that exported the file dropped one column. The signal is exactly the one this
+     * reader used to die on: a column that is not an integer where the second flag is expected. Such a
+     * row is read as the variant with **one** flags column, which puts every following column back
+     * where its author put it - the row above comes out as the half extents of a 170x70 unit pavement
+     * (`bbMin -85.3101 -34.9212 -0.0684118`, `bbMax 85.3101 34.9213 0.0684114`, sphere radius
+     * 92.1809). Read strictly it threw `NumberFormatException` and took the whole map with it: 0 IPLs,
+     * 0 images (`NEXT-STEPS.md` item 4).
+     *
+     * `flags2` becomes 0 in that case and [relaxedRead] is set. A row that ends early leaves the
+     * columns it does not have at their defaults; a row that is not a row at all (no second column)
+     * still throws, and `IDE` skips that one record with a warning instead of the file.
+     */
     override fun read(line: String) {
-        var line = line
-        line = line.replace(" ", "")
-        val split = line.split(",".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()
+        val record = IdeRecord(line)
+        val split = record.fields
         when (gameType) {
             GameType.GTA_IV -> {
                 modelName = split[0]
                 textureName = split[1]
                 drawDistance = FloatArray(1)
-                if (split.size > 4) {
-                    drawDistance[0] = java.lang.Float.valueOf(split[2])
-                    flag1 = Integer.valueOf(split[3])
-                    flag2 = Integer.valueOf(split[4])
-                    boundsMin = Vector3D(
-                        java.lang.Float.valueOf(split[5]), java.lang.Float.valueOf(split[6]), java.lang.Float.valueOf(
-                            split[7]
-                        )
-                    )
-                    boundsMax = Vector3D(
-                        java.lang.Float.valueOf(split[8]), java.lang.Float.valueOf(split[9]), java.lang.Float.valueOf(
-                            split[10]
-                        )
-                    )
-                    boundsSphere = Vector4D(
-                        java.lang.Float.valueOf(split[11]), java.lang.Float.valueOf(split[12]), java.lang.Float.valueOf(
-                            split[13]
-                        ), java.lang.Float.valueOf(split[14])
-                    )
-                    WDD = split[15]
+                if (record.size > 4) {
+                    drawDistance[0] = record.floatOr(2)
+                    flag1 = record.intOr(3, 0)
+                    // One flags column (the second was dropped, so everything behind it shifted left)
+                    // or both of them - the bounds start one column further left in the first case.
+                    val secondFlag = record.intOrNull(4)
+                    val boundsAt = if (secondFlag == null) IdeRecord.BOUNDS_AFTER_ONE_FLAG
+                    else IdeRecord.BOUNDS_AFTER_TWO_FLAGS
+                    flag2 = secondFlag ?: 0
+                    val bounds = record.bounds(boundsAt)
+                    boundsMin = bounds.min
+                    boundsMax = bounds.max
+                    boundsSphere = bounds.sphere
+                    WDD = bounds.wdd
+                    relaxedRead = record.relaxed || secondFlag == null
                 }
             }
 

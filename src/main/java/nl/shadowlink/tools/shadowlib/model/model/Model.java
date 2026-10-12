@@ -42,6 +42,19 @@ public class Model {
     }
 
     /**
+     * Resolves the texture every shader asks for against the dictionaries attached to the elements and
+     * stores the GL texture id in the shader. Has to run with the GL context current, before the
+     * display lists are compiled.
+     *
+     * @param resolver supplies the GL ids (see GlTextureCache in Shadow-Mapper)
+     */
+    public void bindTextures(TextureResolver resolver) {
+        for (int i = 0; i < elements.size(); i++) {
+            elements.get(i).bindTextures(resolver);
+        }
+    }
+
+    /**
      * Load a WDD file
      *
      * @param img      Bytereader that contains the wdd file, current offset should be at the start of the wdd
@@ -133,50 +146,67 @@ public class Model {
      * @param br      ByteReader
      */
     private void createModelFromDrawable(Element element, DrawableModel sys, int sysSize, byte[] stream, ByteReader br) {
+        createShadersFromDrawable(element, sys);
+        addDrawableGeometry(element, sys, sysSize, stream);
+        attachEmbeddedDictionary(element, sys, sysSize, br);
+    }
+
+    /**
+     * The shader list of a drawable, in group order: one entry per shader of the group, because a
+     * geometry's `ShaderMapping` indexes this list - entries must not be dropped when a shader has no
+     * texture, or every shader behind it moves.
+     */
+    private void createShadersFromDrawable(Element element, DrawableModel sys) {
+        if (sys.shaderGroup == null) {
+            return;
+        }
+        for (int i = 0; i < sys.shaderGroup.Shaders.Count; i++) {
+            ShaderFx shaderFx = sys.shaderGroup.Shaders._items.get(i);
+            java.util.List<String> textureNames = shaderFx.shader.getTextureNames();
+            element.createShader(textureNames,
+                textureNames.isEmpty() ? shaderFx.shader.describeParams() : null);
+        }
+    }
+
+    /** The geometry of a drawable (level of detail 0) as strips on the element. */
+    private void addDrawableGeometry(Element element, DrawableModel sys, int sysSize, byte[] stream) {
+        if (sys.mModelCollection == null || sys.mModelCollection.length == 0
+                || sys.mModelCollection[0]._items.isEmpty()) {
+            return;
+        }
         ModelFile mf = new ModelFile();
-
-        if (sys.shaderGroupOffset != -1) {
-            for (int i = 0; i < sys.shaderGroup.Shaders.Count; i++) { // create
-                // shaders
-                for (int shaderNames = 0; shaderNames < sys.shaderGroup.Shaders._items.get(i).shader.ShaderParamNames.Count; shaderNames++) {
-                    if (726757629 == sys.shaderGroup.Shaders._items.get(i).shader.ShaderParamNames.Values.get(shaderNames)) {
-                        if (sys.shaderGroup.Shaders._items.get(i).shader.ShaderParamOffsets.Values.get(shaderNames) != -1) {
-                            ShaderParamTexture shader = (ShaderParamTexture) sys.shaderGroup.Shaders._items.get(i).shader.ShaderParams
-                                    .get(shaderNames);
-                            element.createShader(shader.TextureName);
-                            // //Message.displayMsgLow("Found diffusemap: "
-                            // + shader.TextureName);
-                        }
-                    }
-                }
+        Model2 test = sys.mModelCollection[0]._items.get(0);// load all
+        // geometries
+        // into one
+        // model
+        for (int i = 0; i < test.Geometries._items.size(); i++) {
+            Geometry geo = test.Geometries._items.get(i);
+            // which shader the geometry uses comes from the model's ShaderMappings: the position
+            // of the geometry in the list is only the same by coincidence (in NJ_01 that is not the
+            // case for 918 of 4455 geometries, and those were textured with the wrong shader)
+            int shaderIndex = i;
+            if (test.ShaderMappings != null && test.ShaderMappings.Count > i) {
+                shaderIndex = test.ShaderMappings.Values.get(i);
             }
-        }
+            element.createStrip(geo.FaceCount, shaderIndex);
+            // //Message.displayMsgLow("Adding vertices");
 
-        if (sys.mModelCollection.length != 0) {
-            Model2 test = sys.mModelCollection[0]._items.get(0);// load all
-            // geometries
-            // into one
-            // model
-            for (int i = 0; i < test.Geometries._items.size(); i++) {
-                Geometry geo = test.Geometries._items.get(i);
-                element.createStrip(geo.FaceCount, i);
-                // //Message.displayMsgLow("Adding vertices");
-
-                mf.addVertices(element, stream, geo.vertexBuffer.DataOffset + sysSize, geo.indexBuffer.DataOffset + sysSize, geo.VertexCount,
-                        geo.FaceCount, geo.VertexStride, i);
-                // //Message.displayMsgLow("Adding polygons");
-                mf.addPolygons(element, stream, geo.vertexBuffer.DataOffset + sysSize, geo.indexBuffer.DataOffset + sysSize, geo.VertexCount,
-                        geo.FaceCount, geo.VertexStride, i);
-            }
+            mf.addVertices(element, stream, geo.vertexBuffer.DataOffset + sysSize, geo.indexBuffer.DataOffset + sysSize, geo.VertexCount,
+                    geo.FaceCount, geo.VertexStride, i);
+            // //Message.displayMsgLow("Adding polygons");
+            mf.addPolygons(element, stream, geo.vertexBuffer.DataOffset + sysSize, geo.indexBuffer.DataOffset + sysSize, geo.VertexCount,
+                    geo.FaceCount, geo.VertexStride, i);
         }
+    }
 
-        if (sys.shaderGroup != null) {
-            if (sys.shaderGroup.TextureDictionaryOffset != 0) {
-                br.setCurrentOffset(sys.shaderGroup.TextureDictionaryOffset);
-                TextureDic wtd = new TextureDic("embed", br, GameType.GTA_IV, false, sysSize);
-                element.attachTXD(wtd);
-            }
+    /** The dictionary embedded in the drawable, when it carries one. */
+    private void attachEmbeddedDictionary(Element element, DrawableModel sys, int sysSize, ByteReader br) {
+        if (sys.shaderGroup == null || sys.shaderGroup.TextureDictionaryOffset == 0) {
+            return;
         }
+        br.setCurrentOffset(sys.shaderGroup.TextureDictionaryOffset);
+        TextureDic wtd = new TextureDic("embed", br, GameType.GTA_IV, false, sysSize);
+        element.attachTXD(wtd);
     }
 
     /**
@@ -271,15 +301,22 @@ public class Model {
      * @param br      Bytereader
      */
     private void createModelFromFragType(FragTypeModel wft, int sysSize, byte[] stream, ByteReader br) {
-        for (int g = 0; g < wft.drawables.size(); g++) {
-            Element element = new Element();
-            // System.out.println("Loading " + g);
-            DrawableModel sys = wft.drawables.get(g);
-
-            createModelFromDrawable(element, sys, sysSize, stream, br);
-            elements.add(element);
-            element = null;
+        if (wft.mainDrawable == null) {
+            throw new IllegalStateException("Fragment type without a drawable");
         }
+        // One element for the whole fragment: its own drawable carries the shader group and the
+        // embedded dictionary, every piece brings geometry, and a piece's ShaderMappings index the
+        // shaders of that one group (a fragment has no shader group of its own, shaderGroupOffset is 0).
+        Element element = new Element();
+        createShadersFromDrawable(element, wft.mainDrawable);
+        attachEmbeddedDictionary(element, wft.mainDrawable, sysSize, br);
+        // some fragments carry the whole mesh in their own drawable (the furniture and the cutscene
+        // characters do), others have it in the pieces only - the fence has an empty main drawable
+        addDrawableGeometry(element, wft.mainDrawable, sysSize, stream);
+        for (DrawableModel piece : wft.childDrawables) {
+            addDrawableGeometry(element, piece, sysSize, stream);
+        }
+        elements.add(element);
     }
 
     /**

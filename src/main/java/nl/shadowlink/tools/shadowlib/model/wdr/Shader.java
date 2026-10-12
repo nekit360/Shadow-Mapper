@@ -5,11 +5,29 @@ import nl.shadowlink.tools.shadowlib.model.collections.SimpleArray;
 import nl.shadowlink.tools.shadowlib.utils.Utils;
 
 import java.util.ArrayList;
+import java.util.List;
 
 /**
  * @author Shadow-Link
  */
 public class Shader {
+    /** joaat("TextureSampler") - the name hash of the parameter that holds the diffuse map. */
+    public static final int PARAM_TEXTURE_SAMPLER = 0x2B5170FD;
+
+    /**
+     * joaat-based hashes of the other parameters that carry a diffuse map.
+     *
+     * Not every shader names its map under "TextureSampler": `nj01_coast7b`, `nj01_18_ground2` and the
+     * other eight models of NJ_01 that rendered white have the map under 0xD52B11DF, and the table in
+     * `Utils.getShaderName` calls that one "DiffuseMap1" and 0x2420AFD1 "DiffuseMap2". They are tried in
+     * this order, after "TextureSampler".
+     */
+    public static final int[] PARAM_DIFFUSE_MAPS = { PARAM_TEXTURE_SAMPLER, 0xD52B11DF, 0x2420AFD1 };
+
+    private static final int TYPE_TEXTURE = 0;
+    private static final int TYPE_VECTOR = 1;
+    private static final int TYPE_MATRIX = 4;
+
     private int startOffset;
 
     private int VTable;
@@ -33,6 +51,26 @@ public class Shader {
     public int shaderParamNameOffset;
 
     public int Hash;
+
+    /**
+     * Parameter names of this shader as `hash(type)`, for the log: shows which parameters a shader has
+     * when it does not carry a diffuse map under "TextureSampler".
+     */
+    public String describeParams() {
+        StringBuilder text = new StringBuilder();
+        text.append("shader ").append(Utils.getHexString(Hash)).append(" params=").append(ShaderParamCount);
+        int shown = Math.min(Math.min(ShaderParamCount, ShaderParamNames.Count), 32);
+        for (int i = 0; i < shown; i++) {
+            try {
+                text.append(' ').append(Utils.getHexString(ShaderParamNames.Values.get(i))).append('(')
+                    .append(i < ShaderParamTypes.Values.size() ? ShaderParamTypes.Values.get(i) : -1).append(')');
+            } catch (RuntimeException e) {
+                // a shader whose parameter list does not read is described as far as it goes
+                break;
+            }
+        }
+        return text.toString();
+    }
     private int Unknown9;
     private int Unknown10;
     private int Unknown11;
@@ -43,6 +81,7 @@ public class Shader {
     public SimpleArray<Byte> ShaderParamTypes;
     public SimpleArray<Integer> ShaderParamNames;
 
+    /** One entry per shader parameter, index aligned with ShaderParamNames/Offsets/Types; null when the type is unknown. */
     public ArrayList ShaderParams = new ArrayList();
 
     /* public Dictionary<ParamNameHash, IShaderParam> ShaderParams { get; private set; } public T
@@ -97,24 +136,35 @@ public class Shader {
             if (ShaderParamOffsets.Values.get(i) != -1) {
                 br.setCurrentOffset(ShaderParamOffsets.Values.get(i));
                 switch (ShaderParamTypes.Values.get(i)) {
-                    case 0:
+                    case TYPE_TEXTURE:
                         ShaderParamTexture test = new ShaderParamTexture();
-                        //test.read(br);
+                        // the texture name only exists after read(), so it has to be read here: without
+                        // it every shader of every model ended up with an empty name and no texture
+                        try {
+                            test.read(br);
+                        } catch (RuntimeException e) {
+                            // a parameter that does not parse must not take the whole model down
+                            test.TextureName = "";
+                        }
                         ShaderParams.add(test);
                         break;
-                    case 1:
+                    case TYPE_VECTOR:
                         ShaderParamVector test1 = new ShaderParamVector();
                         //test1.read(br);
                         ShaderParams.add(test1);
                         break;
-                    case 4:
+                    case TYPE_MATRIX:
                         ShaderParamMatrix test2 = new ShaderParamMatrix();
                         // test2.read(br);
                         ShaderParams.add(test2);
                         break;
+                    default:
+                        // keep the list index aligned with ShaderParamNames/Offsets/Types
+                        ShaderParams.add(null);
                 }
             } else {
                 // Message.displayMsgLow("WTF Der zit een shader @ -1 " + Utils.getHexString(startOffset));
+                ShaderParams.add(null);
             }
         }
 
@@ -125,6 +175,47 @@ public class Shader {
          * br.BaseStream.Seek(ShaderParamOffsets[i], SeekOrigin.Begin); obj.read(br); ShaderParams.Add((ParamNameHash)
          * ShaderParamNames[i], obj); } catch { ShaderParams.Add((ParamNameHash) ShaderParamNames[i], null); } } */
         br.setCurrentOffset(save);
+    }
+
+    /**
+     * The diffuse map of this shader.
+     *
+     * @return the parameter, or null when this shader has none (or it did not parse)
+     */
+    public ShaderParamTexture getTextureParam() {
+        for (int map = 0; map < PARAM_DIFFUSE_MAPS.length; map++) {
+            for (int i = 0; i < ShaderParamCount && i < ShaderParamNames.Count; i++) {
+                if (ShaderParamNames.Values.get(i) != PARAM_DIFFUSE_MAPS[map]) continue;
+                if (i < ShaderParams.size() && ShaderParams.get(i) instanceof ShaderParamTexture) {
+                    return (ShaderParamTexture) ShaderParams.get(i);
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The names of every diffuse map this shader carries, the one under "TextureSampler" first.
+     *
+     * A shader can hold more than one (a model's two shaders both name `nj01_coast7b_texture`, one under
+     * "TextureSampler" and one under 0xD52B11DF), and a name may live in only one of the dictionaries a
+     * model has, so the renderer tries them in order instead of settling for the first.
+     *
+     * @return the names, without duplicates and without empty ones
+     */
+    public List<String> getTextureNames() {
+        List<String> names = new ArrayList<String>();
+        for (int map = 0; map < PARAM_DIFFUSE_MAPS.length; map++) {
+            for (int i = 0; i < ShaderParamCount && i < ShaderParamNames.Count; i++) {
+                if (ShaderParamNames.Values.get(i) != PARAM_DIFFUSE_MAPS[map]) continue;
+                if (i >= ShaderParams.size() || !(ShaderParams.get(i) instanceof ShaderParamTexture)) continue;
+                String name = ((ShaderParamTexture) ShaderParams.get(i)).TextureName;
+                if (name != null && !name.isEmpty() && !names.contains(name)) {
+                    names.add(name);
+                }
+            }
+        }
+        return names;
     }
 
     public String[] getDataNames() {
