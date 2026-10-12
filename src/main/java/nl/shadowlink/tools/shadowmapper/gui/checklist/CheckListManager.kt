@@ -51,6 +51,29 @@ class CheckListManager<T>(
         onSelectionToggled(index, selected)
     }
 
+    /**
+     * Tick or untick every entry at once (batch selection for the list checkboxes).
+     *
+     * Only entries whose state actually changes are reported to [onSelectionToggled], and the change is
+     * applied to the selection model in one step so the list is repainted once instead of once per row.
+     *
+     * @param maxEntries how many entries to touch - the caller may know that the list holds more rows
+     *        than there are objects behind them (the list is filled by the loading thread)
+     */
+    fun setAllSelected(selected: Boolean, maxEntries: Int = Int.MAX_VALUE) {
+        val entries = minOf(maxEntries, list.model.size)
+        if (entries <= 0) return
+        val changed = (0 until entries).filter { selectionModel.isSelectedIndex(it) != selected }
+        if (changed.isEmpty()) return
+        if (selected) {
+            selectionModel.addSelectionInterval(0, entries - 1)
+        } else {
+            selectionModel.removeSelectionInterval(0, entries - 1)
+        }
+        changed.forEach { onSelectionToggled(it, selected) }
+        list.repaint()
+    }
+
     override fun valueChanged(e: ListSelectionEvent) {
         list.repaint(list.getCellBounds(e.firstIndex, e.lastIndex))
     }

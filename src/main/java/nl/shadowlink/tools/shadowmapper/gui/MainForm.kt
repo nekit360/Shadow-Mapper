@@ -31,11 +31,13 @@ class MainForm : JFrame() {
 
     private var buttonDelIDEItem = JButton()
     private var buttonDeleteIPLItem = JButton()
+    private var buttonDeselectAllIpls = JButton()
     private var buttonEditIDEItem = JButton()
     private var buttonEditIPLItem = JButton()
     private var buttonGroup1 = ButtonGroup()
     private var buttonNewIDEItem = JButton()
     private var buttonNewIPLItem = JButton()
+    private var buttonSelectAllIpls = JButton()
     private var buttonSelectModel = JButton()
     private var buttonSelectModel1 = JButton()
     private var buttonSelectModel2 = JButton()
@@ -173,9 +175,16 @@ class MainForm : JFrame() {
         })
         jButton1.text = "Render"
         jButton1.addActionListener { evt -> jButton1ActionPerformed(evt) }
+        buttonSelectAllIpls.text = "Select all"
+        buttonSelectAllIpls.toolTipText = "Tick every entry of the Scene list (press Render to load them)"
+        buttonSelectAllIpls.addActionListener { evt -> onSelectAllIplsClicked(evt) }
+        buttonDeselectAllIpls.text = "Deselect all"
+        buttonDeselectAllIpls.toolTipText = "Untick every entry of the Scene list"
+        buttonDeselectAllIpls.addActionListener { evt -> onDeselectAllIplsClicked(evt) }
         listScene.model = fm.modelIPL
         checkList = CheckListManager(listScene) { index, isSelected ->
-            fm.ipls[index].selected = isSelected
+            // the list is filled by the loading thread, so an index may be ahead of the objects
+            fm.ipls.getOrNull(index)?.selected = isSelected
         }
         listScene.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(evt: MouseEvent) {
@@ -257,6 +266,13 @@ class MainForm : JFrame() {
                     panelRenderLayout.createSequentialGroup().addContainerGap().addComponent(jButton1)
                         .addContainerGap(205, Short.MAX_VALUE.toInt())
                 )
+                .addGroup(
+                    panelRenderLayout.createSequentialGroup().addContainerGap()
+                        .addComponent(buttonSelectAllIpls)
+                        .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
+                        .addComponent(buttonDeselectAllIpls)
+                        .addContainerGap(Short.MAX_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                )
                 .addComponent(jPanel3, GroupLayout.DEFAULT_SIZE, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE.toInt())
                 .addComponent(jScrollPane1, GroupLayout.DEFAULT_SIZE, 282, Short.MAX_VALUE.toInt())
         )
@@ -267,6 +283,11 @@ class MainForm : JFrame() {
                 GroupLayout.Alignment.TRAILING,
                 panelRenderLayout
                     .createSequentialGroup()
+                    .addGroup(
+                        panelRenderLayout.createParallelGroup(GroupLayout.Alignment.BASELINE)
+                            .addComponent(buttonSelectAllIpls).addComponent(buttonDeselectAllIpls)
+                    )
+                    .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
                     .addComponent(jScrollPane1, GroupLayout.DEFAULT_SIZE, 423, Short.MAX_VALUE.toInt())
                     .addPreferredGap(LayoutStyle.ComponentPlacement.RELATED)
                     .addComponent(
@@ -1137,6 +1158,27 @@ class MainForm : JFrame() {
     private fun jButton1ActionPerformed(evt: ActionEvent) { // GEN-FIRST:event_jButton1ActionPerformed
         glListener.reloadMap()
     } // GEN-LAST:event_jButton1ActionPerformed
+
+    private fun onSelectAllIplsClicked(evt: ActionEvent) { // GEN-FIRST:event_onSelectAllIplsClicked
+        setAllIplsSelected(true)
+    } // GEN-LAST:event_onSelectAllIplsClicked
+
+    private fun onDeselectAllIplsClicked(evt: ActionEvent) { // GEN-LAST:event_onDeselectAllIplsClicked
+        setAllIplsSelected(false)
+    } // GEN-LAST:event_onDeselectAllIplsClicked
+
+    /**
+     * Ticks or unticks every entry of the Scene list in one go.
+     *
+     * The files are only marked as selected here - loading them stays with Render, exactly like a single
+     * tick in the list, so ticking "all" does not start a load on its own. The list can hold more rows
+     * than there are IPL objects while the install is still being read, hence the count.
+     */
+    private fun setAllIplsSelected(selected: Boolean) {
+        val entries = minOf(fm.modelIPL.size(), fm.ipls.size)
+        println("Scene list: " + (if (selected) "select" else "deselect") + " all, " + entries + " entries")
+        checkList?.setAllSelected(selected, entries)
+    }
 
     private fun gLCanvas1MouseClicked(evt: MouseEvent) { // GEN-FIRST:event_gLCanvas1MouseClicked
         if (evt.clickCount == 2) {
