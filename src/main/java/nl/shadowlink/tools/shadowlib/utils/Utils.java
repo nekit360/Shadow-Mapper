@@ -14,11 +14,14 @@ public class Utils {
      * @return The value as a hex string
      */
     public static String getHexString(int value) {
-        String hex = Integer.toString(value, 16).toUpperCase();
+        // Integer.toHexString, not Integer.toString(value, 16): the latter writes a minus sign for a
+        // negative value ("-7D7D95BB", nine characters), and the padding loop below then never reaches
+        // the target length - it appended zeroes until the heap was full
+        String hex = Integer.toHexString(value).toUpperCase();
         int size = 4;
         if (hex.length() > 4)
             size = 8;
-        while (hex.length() != size) {
+        while (hex.length() < size) {
             hex = "0" + hex;
         }
         hex = "0x" + hex;
