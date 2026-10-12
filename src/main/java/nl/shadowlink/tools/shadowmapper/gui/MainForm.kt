@@ -160,6 +160,11 @@ class MainForm : JFrame() {
                 gLCanvas1MouseDragged(evt)
             }
         })
+        gLCanvas1.addMouseWheelListener(object : MouseWheelListener {
+            override fun mouseWheelMoved(evt: MouseWheelEvent) {
+                glListener.mouseWheelMoved(evt)
+            }
+        })
         gLCanvas1.addKeyListener(object : KeyAdapter() {
             override fun keyPressed(evt: KeyEvent) {
                 gLCanvas1KeyPressed(evt)

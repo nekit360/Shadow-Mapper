@@ -13,6 +13,7 @@ import java.awt.Point
 import java.awt.Robot
 import java.awt.event.KeyEvent
 import java.awt.event.MouseEvent
+import java.awt.event.MouseWheelEvent
 import java.nio.IntBuffer
 
 /**
@@ -31,6 +32,8 @@ class GlListener(
     private val renderCars: RenderVehicles = RenderVehicles(fm)
 
     private val camSpeed = 0.5f
+    /** Mouse wheel zoom: one notch dollies the camera by this fraction of the view vector. */
+    private val camZoomSpeed = 0.5f
     private var wireFrame = false
     private var pick = false
 
@@ -75,6 +78,11 @@ class GlListener(
         if (evt.keyCode == KeyEvent.VK_D) {
             camera.strafeCamera(camSpeed)
         }
+    }
+
+    /** Mouse wheel: one notch dollies the camera along the view direction (wheel up = zoom in). */
+    fun mouseWheelMoved(evt: MouseWheelEvent) {
+        camera.moveCamera(camZoomSpeed * -evt.preciseWheelRotation.toFloat())
     }
 
     fun mouseMoved(evt: MouseEvent) {
