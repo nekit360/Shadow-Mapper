@@ -165,6 +165,15 @@ class RenderMap(
         for (imgNumber in fm.imgs.indices) {
             val rf = ReadFunctions(fm.imgs[imgNumber].path)
             println("Opened: " + fm.imgs[imgNumber].fileName)
+            // In GTA: IV a shader only names its texture and the game resolves that name against what is
+            // streamed, so a model asks for names that live in the dictionary of a neighbouring model
+            // (in NJ_01 the model's own two dictionaries answer 69 % of the names, the rest are in other
+            // .wtd of the same image). ImageDictionaryCache offers the dictionaries of this image by name
+            // and parses them on demand; it keeps only a bounded set of them, so the memory does not grow
+            // with the size of the image.
+            val imageDictionaries =
+                ImageDictionaryCache(rf, fm.imgs[imgNumber].getItemsOfType(".wtd"), gameType)
+            glTextures.onNameMissing = { name -> imageDictionaries.dictionaryWith(name) }
             for (i in ideList.indices) {
                 phase2Seen++
                 if (phase2Seen % 200 == 0) {
@@ -189,7 +198,7 @@ class RenderMap(
                         // .wdr/.wft/.wdd used to abort loadMap() and freeze the 3D view
                         try {
                             rf.seek(item.offset)
-                            var br = rf.getByteReader(item.size)
+                            val br = rf.getByteReader(item.size)
                             if (itemName.endsWith(".wdr", ignoreCase = true)) {
                                 println(itemName)
                                 mdl = Model().loadWDR(br, item.size)
@@ -202,9 +211,7 @@ class RenderMap(
                             val texName = ideList[i].textureName + ".wtd"
                             val texItem = fm.imgs[imgNumber].findItem(texName)
                             if (texItem != null) {
-                                rf.seek(texItem.offset)
-                                br = rf.getByteReader(texItem.size)
-                                val txd = TextureDic(texName, br, gameType, true, texItem.size)
+                                val txd = imageDictionaries.dictionaryAt(texItem.offset)
                                 mdl?.attachTXD(txd)
                             }
                             // the model knows its own dictionary (embedded in the .wdr) and now the one
@@ -232,13 +239,15 @@ class RenderMap(
                 }
             }
             rf.closeFile()
+            glTextures.onNameMissing = null
+            imageDictionaries.clear()
         }
 
         println("textures: " + glTextures.uploadedTextures + " uploaded ("
             + glTextures.uploadedBytes / 1024 + " KiB) from " + glTextures.dictionariesUsed
-            + " dictionaries, " + glTextures.bound + " shaders textured, "
-            + glTextures.missing + " not found (" + glTextures.missingNameCount + " of "
-            + glTextures.requestedCount + " distinct names)")
+            + " dictionaries, " + glTextures.bound + " shaders textured (" + glTextures.fromImage
+            + " from another dictionary of the image), " + glTextures.missing + " not found ("
+            + glTextures.missingNameCount + " of " + glTextures.requestedCount + " distinct names)")
         if (glTextures.missingExamples.isNotEmpty()) {
             println("   names no attached dictionary has: " + glTextures.missingExamples.joinToString(", "))
         }

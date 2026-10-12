@@ -14,9 +14,11 @@ import nl.shadowlink.tools.shadowlib.texturedic.TextureDic;
 public interface TextureResolver {
 
     /**
-     * @param dictionary  a dictionary attached to the element the name is resolved for
+     * @param dictionary  the dictionary to look in, or null to look anywhere the resolver knows - the
+     *                    caller has nothing left to offer and the name has to be resolved the way the game
+     *                    does it, against everything that is loaded
      * @param textureName the texture name the shader asks for
-     * @return the GL texture id of that texture, or 0 when this dictionary does not have it
+     * @return the GL texture id of that texture, or 0 when it cannot be found
      */
     int resolve(TextureDic dictionary, String textureName);
 }

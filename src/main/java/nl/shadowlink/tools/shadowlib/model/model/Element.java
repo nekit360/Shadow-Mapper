@@ -66,6 +66,10 @@ public class Element {
      * texture id in the shader. Runs before the display list of this model is compiled, with the GL
      * context current.
      *
+     * A name that none of the attached dictionaries has is handed to the resolver once more without a
+     * dictionary: in GTA: IV the shader only names its texture and the game looks it up in what is
+     * loaded, so it can live in a dictionary of another model of the same image.
+     *
      * @param resolver supplies the GL texture ids, 0 when a dictionary does not have that name
      */
     public void bindTextures(TextureResolver resolver) {
@@ -74,11 +78,11 @@ public class Element {
             String textureName = shader.getTextureName();
             int glTex = 0;
             if (textureName != null && !textureName.isEmpty()) {
-                for (int d = 0; d < textureDictionaries.size(); d++) {
+                for (int d = 0; d < textureDictionaries.size() && glTex == 0; d++) {
                     glTex = resolver.resolve(textureDictionaries.get(d), textureName);
-                    if (glTex != 0) {
-                        break;
-                    }
+                }
+                if (glTex == 0) {
+                    glTex = resolver.resolve(null, textureName);
                 }
             }
             shader.setGLTex(glTex);

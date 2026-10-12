@@ -30,6 +30,20 @@ class GlTextureCache(private val gl: GL2) : TextureResolver {
     /** the dictionaries that were asked for a name, by file name - for the log, and it holds no data */
     private val dictionaryNames = HashSet<String>()
 
+    /**
+     * Called when a name is in none of the dictionaries the model brought in.
+     *
+     * The renderer looks for a further dictionary of the image it is working on here and returns it (or
+     * null when that image has no such texture); the texture is then taken from the returned dictionary.
+     * GTA: IV resolves a texture name against what is streamed, not against one model's TXD, so a model
+     * regularly asks for a name that lives in the dictionary of a neighbouring model.
+     */
+    var onNameMissing: ((String) -> TextureDic?)? = null
+
+    /** how many shaders a dictionary of the current image could satisfy (not the model's own ones) */
+    var fromImage = 0
+        private set
+
     /** how many dictionaries were asked for something */
     val dictionariesUsed: Int
         get() = dictionaryNames.size
@@ -65,13 +79,22 @@ class GlTextureCache(private val gl: GL2) : TextureResolver {
     val missingNameCount: Int
         get() = missingNames.size
 
-    override fun resolve(dictionary: TextureDic, textureName: String): Int {
-        dictionaryNames.add(dictionary.fileName.lowercase())
+    override fun resolve(dictionary: TextureDic?, textureName: String): Int {
         requestedNames.add(textureName.lowercase())
-        val texture = dictionary.findTexture(textureName)
+        // no dictionary: the last resort - the dictionaries this model brought in do not have the name,
+        // so it may live in another dictionary of the image being loaded
+        var holder = dictionary
+        if (holder == null) {
+            holder = onNameMissing?.invoke(textureName)
+        }
+        val texture = holder?.findTexture(textureName)
         if (texture == null) {
-            missing++
-            missingNames.add(textureName)
+            // only the last resort counts as "not found": a single attached dictionary that does not have
+            // the name is a partial answer, the next one may still have it
+            if (dictionary == null) {
+                missing++
+                missingNames.add(textureName)
+            }
             return 0
         }
         if (texture.glTextureId == 0) {
@@ -81,6 +104,10 @@ class GlTextureCache(private val gl: GL2) : TextureResolver {
             uploadedBytes += texture.data.size.toLong()
         }
         bound++
+        holder?.let { dictionaryNames.add(it.fileName.lowercase()) }
+        if (dictionary == null) {
+            fromImage++
+        }
         return texture.glTextureId
     }
 
@@ -98,6 +125,7 @@ class GlTextureCache(private val gl: GL2) : TextureResolver {
         uploadedBytes = 0
         bound = 0
         missing = 0
+        fromImage = 0
     }
 }
 

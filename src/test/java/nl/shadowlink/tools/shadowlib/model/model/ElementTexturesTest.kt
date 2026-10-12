@@ -53,12 +53,29 @@ internal class ElementTexturesTest {
 
         val asked = mutableListOf<String>()
         element.bindTextures { txd, _ ->
-            asked.add(txd.fileName)
-            if (txd.fileName == "nj01_27.wtd") 99 else 0
+            asked.add(txd?.fileName ?: "anywhere")
+            if (txd?.fileName == "nj01_27.wtd") 99 else 0
         }
 
         assertEquals(listOf("embedded.txd", "nj01_27.wtd"), asked)
         assertEquals(99, element.getShader(0).getGLTex())
+    }
+
+    @Test
+    fun `when no attached dictionary has the name, then the resolver is asked without one`() {
+        val element = Element()
+        element.createShader("nj01_kerb4")
+        element.attachTXD(dictionary("embedded.txd"))
+
+        val asked = mutableListOf<TextureDic?>()
+        element.bindTextures { txd, _ ->
+            asked.add(txd)
+            0                                              // nothing finds it, the pool included
+        }
+
+        assertEquals(2, asked.size)
+        assertEquals(null, asked[1], "the last attempt must be the one without a dictionary")
+        assertEquals(0, element.getShader(0).getGLTex())
     }
 
     @Test
@@ -79,17 +96,17 @@ internal class ElementTexturesTest {
     }
 
     @Test
-    fun `when a model has no dictionary, then nothing is bound`() {
+    fun `when a model has no dictionary, then the name still gets its chance`() {
         val element = Element()
         element.createShader("nj01_kerb4")
 
-        var asked = 0
-        element.bindTextures { _, _ ->
-            asked++
+        val asked = mutableListOf<TextureDic?>()
+        element.bindTextures { txd, _ ->
+            asked.add(txd)
             5
         }
 
-        assertEquals(0, asked)
-        assertEquals(0, element.getShader(0).getGLTex())
+        assertEquals(listOf<TextureDic?>(null), asked)
+        assertEquals(5, element.getShader(0).getGLTex())
     }
 }
