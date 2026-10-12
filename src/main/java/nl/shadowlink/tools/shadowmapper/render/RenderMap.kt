@@ -29,6 +29,8 @@ class RenderMap(
     var reload = false
     var loading = false
     var added = false
+    /** Draw every instance of the selected IPLs, ignoring the draw distance from the IDE. */
+    var fullDrawDistance = false
     var tempIDE: ItemObject? = null
     var tempIPL: Item_INST? = null
 
@@ -56,7 +58,7 @@ class RenderMap(
                     gl.glPushName(iplIndex)
                     ipl.itemsInst.forEachIndexed { instanceIndex, item ->
                         if (!item.name.lowercase(Locale.getDefault()).contains("lod")) {
-                            if (getDistance(camera.pos, item.position) < item.drawDistance) {
+                            if (fullDrawDistance || getDistance(camera.pos, item.position) < item.drawDistance) {
                                 gl.glPushName(instanceIndex)
                                 if (item.selected) {
                                     gl.glColor3f(0.9f, 0f, 0f)

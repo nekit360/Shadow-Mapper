@@ -43,6 +43,7 @@ class MainForm : JFrame() {
     private var checkMap = JCheckBox()
     private var checkWater = JCheckBox()
     private var checkZones = JCheckBox()
+    private var checkFullDistance = JCheckBox()
     private var comboIPLType = JComboBox<String>()
     private var gLCanvas1 = GLCanvas()
     private var jButton1 = JButton()
@@ -189,6 +190,11 @@ class MainForm : JFrame() {
         checkMap.addItemListener { evt -> checkMapItemStateChanged(evt) }
         jCheckBox1.text = "Paths"
         jCheckBox1.isEnabled = false
+        checkFullDistance.text = "Far view"
+        checkFullDistance.toolTipText = "Draw every object of the selected IPLs, ignoring the draw distance from the IDE"
+        checkFullDistance.isSelected = true
+        checkFullDistance.addItemListener { evt -> checkFullDistanceItemStateChanged(evt) }
+        glListener.setFullDrawDistance(checkFullDistance.isSelected)
         val jPanel3Layout = GroupLayout(jPanel3)
         jPanel3.layout = jPanel3Layout
         jPanel3Layout.setHorizontalGroup(
@@ -208,6 +214,7 @@ class MainForm : JFrame() {
                                 .addGroup(
                                     jPanel3Layout.createSequentialGroup().addComponent(checkZones)
                                         .addGap(18, 18, 18).addComponent(jCheckBox1)
+                                        .addGap(18, 18, 18).addComponent(checkFullDistance)
                                 )
                         )
                         .addContainerGap(81, Short.MAX_VALUE.toInt())
@@ -227,6 +234,7 @@ class MainForm : JFrame() {
                         .addGroup(
                             jPanel3Layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
                                 .addComponent(checkZones).addComponent(jCheckBox1)
+                                .addComponent(checkFullDistance)
                         )
                 )
         )
@@ -1173,6 +1181,10 @@ class MainForm : JFrame() {
     private fun checkWaterItemStateChanged(evt: ItemEvent) {
         glListener.displayWater = checkWater.isSelected
     } // GEN-LAST:event_checkWaterItemStateChanged
+
+    private fun checkFullDistanceItemStateChanged(evt: ItemEvent) {
+        glListener.setFullDrawDistance(checkFullDistance.isSelected)
+    }
 
     private fun listIPLValueChanged(evt: ListSelectionEvent) {
         fm.updateIPLItemList(listIPL.selectedIndex, comboIPLType.selectedIndex)

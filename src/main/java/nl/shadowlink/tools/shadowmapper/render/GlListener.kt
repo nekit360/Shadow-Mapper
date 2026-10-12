@@ -266,6 +266,11 @@ class GlListener(
         this.wireFrame = wireFrame
     }
 
+    /** false: hide objects farther away than the draw distance the IDE gives them (default). */
+    fun setFullDrawDistance(enabled: Boolean) {
+        renderMap.fullDrawDistance = enabled
+    }
+
     fun setPick() {
         println("Start picking")
         pick = true
