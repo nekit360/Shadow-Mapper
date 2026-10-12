@@ -70,21 +70,22 @@ class GlListener(
     }
 
     fun mouseMoved(evt: MouseEvent) {
+        // The cursor is warped back onto the press point (mousePos) after every event, so the
+        // offset between the event and that point is this step's rotation. Keeping the reference
+        // fixed is what makes the warp's own echo event a no-op (offset 0) instead of a rotation in
+        // reverse. The offset used to include a permanent +41 px from the warp target, which biased
+        // every step downwards: looking up needed a 41 px move per event just to break even.
+        val angleY = (mousePos.x - evt.point.x).toFloat() / 500
+        val angleZ = (mousePos.y - evt.point.y).toFloat() / 500
+
+        // keep the look direction within +-8 units vertically around the eye (the lower bound was a
+        // dead comparison: camera.viewY - camera.viewY < -8 can never be true)
+        val pitch = (camera.viewY + angleZ) - camera.posY
+        camera.viewY = camera.posY + pitch.coerceIn(-8f, 8f)
+        camera.rotateView(-angleY)
+
         try {
-            val robby = Robot()
-            val newMousePos = evt.point
-            robby.mouseMove(canvasPos.x + mousePos.x, canvasPos.y + mousePos.y + 41)
-            val angleY = (mousePos.x - canvasPos.x - (newMousePos.x - canvasPos.x)).toFloat() / 500
-            val angleZ = (mousePos.y - canvasPos.y - (newMousePos.y - canvasPos.y)).toFloat() / 500
-            val viewY = camera.viewY.toDouble()
-            camera.viewY = (viewY + angleZ).toFloat()
-            if (camera.viewY - camera.posY > 8) {
-                camera.viewY = camera.posY + 8
-            }
-            if (camera.viewY - camera.viewY < -8) {
-                camera.viewY = camera.posY - 8
-            }
-            camera.rotateView(-angleY)
+            Robot().mouseMove(canvasPos.x + mousePos.x, canvasPos.y + mousePos.y)
         } catch (ex: AWTException) {
             println(ex)
         }
