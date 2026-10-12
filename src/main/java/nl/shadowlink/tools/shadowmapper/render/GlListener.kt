@@ -54,6 +54,14 @@ class GlListener(
     private var fps = 0.0f
     private var previousTime: Long = 0
 
+    companion object {
+        /**
+         * Far clipping plane. The map spans thousands of units, so the previous 1000 clipped
+         * everything beyond a very short distance even when the draw distance limit was off.
+         */
+        private const val FAR_PLANE = 20000.0
+    }
+
     fun keyPressed(evt: KeyEvent) {
         if (evt.keyCode == KeyEvent.VK_W) {
             camera.moveCamera(camSpeed)
@@ -136,7 +144,7 @@ class GlListener(
         gl.glLoadIdentity()
         glu.gluPickMatrix(mouseX.toFloat(), (viewport[3] - mouseY).toFloat(), 5f, 5f, viewport, 0)
         val ratio = (viewport[2] + 0.0).toFloat() / viewport[3]
-        glu.gluPerspective(45.0, ratio.toDouble(), 0.1, 1000.0)
+        glu.gluPerspective(45.0, ratio.toDouble(), 0.1, FAR_PLANE)
         gl.glMatrixMode(GLMatrixFunc.GL_MODELVIEW)
     }
 
@@ -226,7 +234,7 @@ class GlListener(
         gl.glViewport(0, 0, width, height)
         gl.glMatrixMode(GL2.GL_PROJECTION)
         gl.glLoadIdentity()
-        glu.gluPerspective(45.0, h.toDouble(), 0.1, 1000.0)
+        glu.gluPerspective(45.0, h.toDouble(), 0.1, FAR_PLANE)
         gl.glMatrixMode(GL2.GL_MODELVIEW)
         gl.glLoadIdentity()
     }
