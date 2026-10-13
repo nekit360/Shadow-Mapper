@@ -7,6 +7,7 @@ import nl.shadowlink.tools.io.WriteFunctions
 import nl.shadowlink.tools.shadowlib.utils.GameType
 import nl.shadowlink.tools.shadowlib.utils.hashing.HashTable
 import nl.shadowlink.tools.shadowlib.utils.hashing.OneAtATimeHasher.Companion.getHashKey
+import java.util.Locale
 
 /**
  * @author Shadow-Link
@@ -28,6 +29,24 @@ class Item_INST(private val gameType: GameType) : IplItem() {
     private val hidden = false
     var selected = false
     var glListID = 0
+    /**
+     * Whether this instance's name marks it as a far-distance (LOD) copy of a model.
+     *
+     * The renderer asks this for every instance of every frame - a whole-map load walks 175 447 of them -
+     * and `name.lowercase(Locale.getDefault()).contains("lod")` builds a string per instance per frame for
+     * an answer that cannot change: an instance's name is final once its line is read (a hash-resolved
+     * GTA: IV instance is given the resolved name right there). Cached on first use.
+     */
+    fun isLodModel(): Boolean {
+        if (!lodModelKnown) {
+            lodModel = name.lowercase(Locale.getDefault()).contains("lod")
+            lodModelKnown = true
+        }
+        return lodModel
+    }
+
+    private var lodModelKnown = false
+    private var lodModel = false
     override fun read(line: String) {
         var line = line
         line = line!!.replace(" ", "")

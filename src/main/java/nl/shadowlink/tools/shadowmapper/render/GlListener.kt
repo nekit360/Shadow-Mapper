@@ -69,12 +69,25 @@ class GlListener(
     private var fps = 0.0f
     private var previousTime: Long = 0
 
+    /** When the last slow second was reported, so a slow view cannot flood the console. */
+    private var lastSlowReport: Long = 0
+
     companion object {
         /**
          * Far clipping plane. The map spans thousands of units, so the previous 1000 clipped
          * everything beyond a very short distance even when the draw distance limit was off.
          */
         private const val FAR_PLANE = 20000.0
+
+        /**
+         * A second below this many frames is reported in the log. A whole-map load walks every instance of
+         * every ticked IPL per frame, so "the map is big" and "the frame does too much work" look the same
+         * from the outside; the line names the two numbers that tell them apart.
+         */
+        private const val SLOW_FPS = 30.0f
+
+        /** and at most one such line every this many seconds */
+        private const val SLOW_REPORT_SECONDS = 5L
     }
 
     fun keyPressed(evt: KeyEvent) {
@@ -302,8 +315,23 @@ class GlListener(
         val currentTime = System.currentTimeMillis()
         ++fps
         if (currentTime - previousTime >= 1000) {
+            val frames = fps
             previousTime = currentTime
-            onFpsUpdateListener?.invoke(fps)
+            onFpsUpdateListener?.invoke(frames)
+            // A load runs on this thread (JOGL dispatches a GLCanvas display on the event thread): those
+            // seconds are not slow frames, they are a load, and they print their own progress. Neither is
+            // the first second, when no map is loaded yet and there is nothing to draw.
+            if (frames < SLOW_FPS && renderMap.instancesVisited > 0 && !fm.loading && !renderMap.loading
+                && currentTime - lastSlowReport >= SLOW_REPORT_SECONDS * 1000
+            ) {
+                lastSlowReport = currentTime
+                println(
+                    "Slow frames: " + (1000 / frames.coerceAtLeast(1f)).toInt() + " ms per frame (" + frames
+                        + " FPS), " + renderMap.instancesVisited + " instances visited, "
+                        + renderMap.instancesDrawn + " drawn"
+                        + (if (renderMap.fullDrawDistance) ", far draw distance" else "")
+                )
+            }
             fps = 0.0f
         }
     }

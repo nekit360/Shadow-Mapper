@@ -55,6 +55,16 @@ class RenderMap(
     var progressListener: ((Int, Int) -> Unit)? = null
     private var progressDone = 0
     private var progressTotal = 0
+    /**
+     * How many instances the last frame walked in the opaque loop: every instance of every IPL that is
+     * ticked and loaded, whether or not it ends up being drawn. It is the per-frame cost of a whole-map
+     * load, and it is what the draw distance test spares the card.
+     */
+    var instancesVisited = 0
+        private set
+    /** How many of those the draw distance let through to a display list (the transparent pass aside). */
+    var instancesDrawn = 0
+        private set
     var tempIDE: ItemObject? = null
     var tempIPL: Item_INST? = null
 
@@ -77,13 +87,21 @@ class RenderMap(
                 println("Loading added model finished")
             }
             glassInstances.clear()
+            instancesVisited = 0
+            instancesDrawn = 0
             gl.glPushName(PickingType.map)
             fm.ipls.forEachIndexed { iplIndex, ipl ->
                 if (ipl.selected && ipl.itemsLoaded) {
                     gl.glPushName(iplIndex)
                     ipl.itemsInst.forEachIndexed { instanceIndex, item ->
-                        if (!item.name.lowercase(Locale.getDefault()).contains("lod")) {
-                            if (fullDrawDistance || getDistance(camera.pos, item.position) < item.drawDistance) {
+                        instancesVisited++
+                        // The draw distance test comes first: it is three subtractions and a comparison, and
+                        // it is false for the great majority of the instances of a whole-map load (175 447 of
+                        // them), so their model name is never looked at and no string is built for them. The
+                        // two tests are the ones that were here before, in the other order and without the
+                        // square root; a LOD is still skipped and a far instance is still skipped.
+                        if (fullDrawDistance || isWithinDrawDistance(item)) {
+                            if (!item.isLodModel()) {
                                 gl.glPushName(instanceIndex)
                                 if (item.selected) {
                                     gl.glColor3f(0.9f, 0f, 0f)
@@ -91,6 +109,7 @@ class RenderMap(
                                     gl.glColor3f(1f, 1f, 1f)
                                 }
                                 drawInstance(gl, item, glDisplayList)
+                                instancesDrawn++
                                 gl.glPopName()
                                 // this instance's glass is in no other list: it is drawn at the end of the
                                 // frame, over every opaque material, so it blends with what stands behind it
@@ -251,6 +270,8 @@ class RenderMap(
         // that an image that had to be searched once is not searched again for the next district
         val neighbours = NeighbourDictionaries(fm, gameType)
         var fromNeighbour = 0
+        var dictionariesParsed = 0
+        var dictionaryIndexHits = 0
         Element.resetTextureDiagnostics()
         val whiteModels = ArrayList<String>()
         var modelsWithGlass = 0
@@ -366,26 +387,37 @@ class RenderMap(
             }
             rf.closeFile()
             glTextures.onNameMissing = null
+            dictionariesParsed += imageDictionaries.parsedDictionaries
+            dictionaryIndexHits += imageDictionaries.indexHits
             imageDictionaries.clear()
         }
 
+        // the log names the images that were searched, and clear() releases them (their caches, their open
+        // files): take the names and the counters before it, or the summary prints empty parentheses
+        val searchedImages = neighbours.searched.toList()
+        val globalImages = neighbours.globals.toList()
+        val hitsFromGlobal = neighbours.hitsFromGlobal
         neighbours.clear()
         println("textures: " + glTextures.uploadedTextures + " uploaded ("
             + glTextures.uploadedBytes / 1024 + " KiB) from " + glTextures.dictionariesUsed
             + " dictionaries, " + glTextures.bound + " shaders textured (" + glTextures.fromImage
             + " from another dictionary of the image), " + glTextures.missing + " not found ("
             + glTextures.missingNameCount + " of " + glTextures.requestedCount + " distinct names)")
+        // how often a dictionary had to be parsed for the models of this load: a TXD that several models
+        // name is parsed once per model, and the index of a dictionary answers a name without parsing it
+        println("   " + dictionariesParsed + " dictionary parses, " + dictionaryIndexHits
+            + " names answered by an index of this image")
         if (glTextures.missingExamples.isNotEmpty()) {
             println("   names no attached dictionary has: " + glTextures.missingExamples.joinToString(", "))
         }
-        if (fromNeighbour > 0 || neighbours.searched.isNotEmpty()) {
-            println("   " + (fromNeighbour - neighbours.hitsFromGlobal)
+        if (fromNeighbour > 0 || searchedImages.isNotEmpty()) {
+            println("   " + (fromNeighbour - hitsFromGlobal)
                 + " shaders textured from a neighbouring image ("
-                + neighbours.searched.joinToString(", ") + ")")
+                + searchedImages.joinToString(", ") + ")")
         }
-        if (neighbours.hitsFromGlobal > 0) {
-            println("   " + neighbours.hitsFromGlobal + " from the global texture pack ("
-                + neighbours.globals.joinToString(", ") + ")")
+        if (hitsFromGlobal > 0) {
+            println("   " + hitsFromGlobal + " from the global texture pack ("
+                + globalImages.joinToString(", ") + ")")
         }
         println("   shader slots without a diffuse map: " + Element.shadersWithoutTextureName
             + ", with a name no dictionary has: " + Element.shadersWithoutTexture)
@@ -488,6 +520,18 @@ class RenderMap(
         }
         tempIDE = null
         tempIPL = null
+    }
+
+    /**
+     * The draw distance test of the frame loop, without the square root: the loop only compares distances
+     * and paid for 175 447 roots per frame otherwise. Same test as `getDistance(...) < item.drawDistance`.
+     */
+    private fun isWithinDrawDistance(item: Item_INST): Boolean {
+        val dx = camera.pos.x - item.position.x
+        val dy = 0 - camera.pos.z - item.position.y
+        val dz = camera.pos.y - item.position.z
+        val limit = item.drawDistance
+        return dx * dx + dy * dy + dz * dz < limit * limit
     }
 
     private fun getDistance(test1: Vector3D, test2: Vector3D): Float {
