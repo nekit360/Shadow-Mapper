@@ -292,7 +292,9 @@ class GlListener(
         gl.glEnable(GL.GL_BLEND)
         // gl.glDisable(gl.GL_COLOR_MATERIAL);
 
-        renderWater.init()
+        // The water texture is not read here: the GL init runs before an install is chosen, so there is no
+        // pc/textures/water.wtd to read yet (it fails on `nullpc\textures\water.wtd`). RenderWater loads it
+        // itself on the first frame that has water planes.
 //        renderCars.init(gl, fm);
     }
 

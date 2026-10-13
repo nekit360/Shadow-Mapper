@@ -85,6 +85,10 @@ class FileManager : Thread() {
     private var gameDir: String? = null
     private var gameType: GameType? = null
 
+    /** The install that is loaded, null before one was chosen (the renderer reads install files from it). */
+    val installDir: String?
+        get() = gameDir
+
     val gamePath: Path
         get() = Path(requireNotNull(gameDir))
 
@@ -453,9 +457,20 @@ class FileManager : Thread() {
         }
     }
 
+    /**
+     * The water texture dictionary of the install: `pc/textures/water.wtd`, a loose file - the game keeps its
+     * water surface texture outside the images (measured: 23 655 bytes, one texture `waterclear`). Read on
+     * demand, by the water renderer.
+     */
     fun loadWaterTexture(): TextureDic {
-        TODO("Fix this")
-//        return TextureDic("$gameDir/pc/textures/water.wtd", null, GameType.GTA_IV, 23655)
+        val file = gameDir + "pc/textures/water.wtd"
+        val rf = ReadFunctions(file)
+        try {
+            val br = rf.getByteReader(rf.moreToRead())
+            return TextureDic(file, br, GameType.GTA_IV, true, br.toArray().size)
+        } finally {
+            rf.closeFile()
+        }
     }
 
     fun addNewImg(path: Path): CommandResult {
