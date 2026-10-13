@@ -3,9 +3,11 @@ package nl.shadowlink.tools.shadowlib.water
 import nl.shadowlink.tools.io.Vector3D
 
 /**
+ * One corner of a water plane: `x y z speedX speedY unknown waveHeight`.
+ *
  * @author Shadow-Link
  */
-class WaterPoint(line: String) {
+class WaterPoint(values: FloatArray) {
     @JvmField
     var coord: Vector3D
     var speedX: Float
@@ -14,15 +16,15 @@ class WaterPoint(line: String) {
     var waveHeight: Float
 
     init {
-        val split = line.split(" ".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()
-        coord = Vector3D(
-            java.lang.Float.valueOf(split[0]), java.lang.Float.valueOf(split[1]), java.lang.Float.valueOf(
-                split[2]
-            )
-        )
-        speedX = java.lang.Float.valueOf(split[3])
-        speedY = java.lang.Float.valueOf(split[4])
-        unknown = java.lang.Float.valueOf(split[5])
-        waveHeight = java.lang.Float.valueOf(split[6])
+        coord = Vector3D(values[0], values[1], values[2])
+        speedX = values[3]
+        speedY = values[4]
+        unknown = values[5]
+        waveHeight = values[6]
+    }
+
+    companion object {
+        /** how many values one corner carries */
+        const val VALUES = 7
     }
 }

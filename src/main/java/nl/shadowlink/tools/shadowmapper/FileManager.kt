@@ -117,6 +117,19 @@ class FileManager : Thread() {
         null
     }
 
+    /**
+     * Reads one `water.dat`, or null when the file cannot be read at all. The water step is the last one of the
+     * load, so a file that throws here used to end the run right before the WPL pass and left the loading dialog
+     * open (measured on the modded install: the dialog stopped at 96 % for good). The lines inside the file are
+     * guarded by `Water` itself.
+     */
+    private fun loadWater(waterPath: String): Water? = try {
+        Water(gameDir + waterPath, gameType!!)
+    } catch (ex: Exception) {
+        println("Warning: <WATER> $waterPath could not be read (${ex.javaClass.simpleName}: ${ex.message})")
+        null
+    }
+
     private fun startLoading() {
         val imgLoader = ImgLoaderFactory.getImgLoader(gameType!!, key!!)
         val defaultDat = GtaDat(gameDir + "common/data/default.dat", gameDir!!)
@@ -175,7 +188,7 @@ class FileManager : Thread() {
 
         gtaDat.water.forEach { waterPath ->
             statusCallbacks?.onLoadingStatusChanged("<WATER> $waterPath")
-            waters.add(Water(gameDir + waterPath, gameType!!))
+            loadWater(waterPath)?.let { waters.add(it) }
             statusCallbacks?.onLoadingValueIncreased()
         }
 
