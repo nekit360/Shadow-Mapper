@@ -150,45 +150,46 @@ class IDE(
         }
         readRecords++
         when (item) {
+            // The subclasses first: an ItemAnimated or an ItemTimedObject IS an ItemObject, and its
+            // record belongs in its own list (and back into its own section on save), not in itemObjs.
+            is ItemAnimated -> itemAnim.add(item)
+            is ItemTimedObject -> itemTobj.add(item)
+            is ItemCars -> itemCars.add(item)
+            is ItemTxdPack -> itemTxdp.add(item)
             is ItemObject -> {
                 itemObjs.add(item)
                 if (item.relaxedRead) {
                     println(
-                        "Warning: $fileName line $lineNumber: ${item.modelName}: the objs record carries no " +
+                        "Warning: $fileName line $lineNumber: ${item.modelName}: the record carries no " +
                                 "second flags column, its bounds were read one column to the left: $line"
                     )
                 }
             }
 
-            is ItemCars -> itemCars.add(item)
-            is ItemTimedObject -> itemTobj.add(item)
-            is ItemTxdPack -> itemTxdp.add(item)
             else -> {} // sections whose reader keeps nothing but the name are not stored anywhere
         }
     }
 
-    fun findItem(name: String): IdeItem? {
-        var ret: IdeItem? = null
-        if (itemObjs.size != 0) {
-            var i = 0
-            var item = itemObjs[i]
-            while (item.modelName != name) {
-                item = if (i < itemObjs.size - 1) {
-                    i++
-                    itemObjs[i]
-                } else {
-                    break
-                }
-            }
-            if (item.modelName == name) {
-                //Message.displayMsgSuper("<IDE " + fileName + ">Found file " + name + " at " + i);
-                ret = itemObjs[i]
-            } else {
-                //Message.displayMsgSuper("<IDE " + fileName + ">Unable to find file " + name);
-            }
-        }
-        return ret
+    /**
+     * The object a model name belongs to, out of every section that declares objects.
+     *
+     * `objs` is where the bulk of the map's models live, but the format declares objects in two more
+     * sections and a WPL places them as ordinary instances: `tobj` (the timed objects - the district's
+     * night windows and emissive LODs, 2 752 rows in this install) and `anim` (the section's own objects,
+     * 160 rows here). Looking in `objs` alone left 1 754 instances of a clean install with no model at
+     * all - the renderer draws nothing for such an instance (`STATUS.md`, "Models the editor could not
+     * find in the IDE").
+     *
+     * The lists are small and the renderer asks once per instance per loaded model, so this stays a scan.
+     */
+    fun findItem(name: String): ItemObject? {
+        findIn(itemObjs, name)?.let { return it }
+        findIn(itemTobj, name)?.let { return it }
+        return findIn(itemAnim, name)
     }
+
+    private fun <T : ItemObject> findIn(items: List<T>, name: String): T? =
+        items.firstOrNull { it.modelName == name }
 
     fun openIDE(): Boolean {
         try {

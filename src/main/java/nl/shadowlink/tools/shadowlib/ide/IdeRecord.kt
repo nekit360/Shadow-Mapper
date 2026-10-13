@@ -56,6 +56,14 @@ internal class IdeRecord(line: String) {
     fun textOrNull(index: Int): String? = fields.getOrNull(index)
 
     /**
+     * The same columns without the one at [index]. An `anim` record carries one column more than an
+     * `OBJS` row (see [ItemObject.animWad]), and dropping that column turns the record into the row it
+     * is a variant of, so the rest can be read with the rules above.
+     */
+    fun without(index: Int): IdeRecord =
+        IdeRecord(fields.filterIndexed { i, _ -> i != index }.joinToString(","))
+
+    /**
      * The ten bound floats and the `.wdd` name that follow the flags. [at] is the column of
      * `boundsMin.x`: 5 for a record with both flags, 4 for one with a single flags column, where
      * every following column has shifted one to the left.
