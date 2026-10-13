@@ -58,6 +58,18 @@ public class VertexBuffer {
 
         p2Offset = br.readOffset(); // null
 
+        // The vertex data is at the pointer whose word carries the graphics-memory tag (6). A model
+        // written by a tool (3ds Max -> GIMS -> OpenIV import) stores that pointer in this second field
+        // and leaves the first at 0, while the stock files write the same pointer in both. Taking the
+        // first field for the data offset then meant "graphics offset 0" for **every** geometry of such
+        // a model, so each of them drew the vertices of the one geometry whose data happens to sit at
+        // offset 0: a tangle of stretched triangles in the editor while the game, which uses the tagged
+        // pointer, draws the model correctly (measured on electron_cinema_base.wdr: 17 geometries, all
+        // DataOffset 0, DataOffset2 != 0; across stock images both fields are always equal).
+        if (DataOffset == 0) {
+            DataOffset = DataOffset2;
+        }
+
         ReadData(br);
 
         //
