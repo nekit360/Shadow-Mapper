@@ -100,8 +100,18 @@ public class Element {
             if (glTex == 0) {
                 shadersWithoutTexture++;
             }
+            // whether the diffuse map itself carries transparency: the mod's glass doors are exported under
+            // a generic preset, so their preset says nothing (see Shader.isTransparent())
+            shader.setTextureHasAlpha(resolver.isTransparentTexture(glTex));
             if (shader.isTransparent()) {
                 transparentShaders++;
+                if (shader.isGlass()) {
+                    transparentGlass++;
+                } else if (shader.isAlphaPreset()) {
+                    transparentAlphaPresets++;
+                } else {
+                    transparentTextures++;
+                }
             }
             shader.setGLTex(glTex);
         }
@@ -113,8 +123,17 @@ public class Element {
     /** shader slots whose name matched no dictionary */
     public static int shadersWithoutTexture = 0;
 
-    /** shader slots the renderer's transparent pass draws, i.e. glass ({@link Shader#isTransparent()}) */
+    /** shader slots the renderer's transparent pass draws, i.e. every blended material that is not a decal */
     public static int transparentShaders = 0;
+
+    /** ... of those, the ones whose preset says glass */
+    public static int transparentGlass = 0;
+
+    /** ... the ones whose preset is an `*_alpha` one */
+    public static int transparentAlphaPresets = 0;
+
+    /** ... and the ones whose preset says nothing but whose diffuse map is transparent (the mod's glass doors) */
+    public static int transparentTextures = 0;
 
     /** the parameters of the first shaders that had no diffuse map, for the log */
     public static final java.util.List<String> unknownShaderParams = new java.util.ArrayList<String>();
@@ -124,6 +143,9 @@ public class Element {
         shadersWithoutTextureName = 0;
         shadersWithoutTexture = 0;
         transparentShaders = 0;
+        transparentGlass = 0;
+        transparentAlphaPresets = 0;
+        transparentTextures = 0;
         unknownShaderParams.clear();
     }
 
@@ -639,14 +661,14 @@ public class Element {
      * part of the card as well, so the background shines through the leaves and a tree looks washed
      * out and pale at every distance, and its leaves take on the colour of whatever is behind them.
      *
-     * A **glass** material is drawn in the transparent pass and is therefore blended: its alpha channel is
-     * the transparency of the pane and what stands behind the pane - the interior, the wall - is what shows
-     * through it (see {@link Shader#isTransparent()}). Drawn outside that pass - through {@link #render(GL2)},
-     * which is what a probe does - it is drawn opaque and two-sided instead, because the pass is what
-     * guarantees the interior behind it has been drawn first.
+     * A **transparent** material (glass, an `*_alpha` preset, or a diffuse map whose alpha is transparent - see
+     * {@link Shader#isTransparent()}) is drawn in the transparent pass, which is why it is blended there: the
+     * pass has already drawn what stands behind it. Drawn outside that pass - through {@link #render(GL2)},
+     * which is what a probe does - it is drawn opaque and two-sided instead, because the pass is what guarantees
+     * the interior behind it has been drawn first.
      *
      * Everything else keeps the previous behaviour (blending on, no alpha test), which is what the
-     * blended materials of the game - decals, the `gta_alpha.sps` presets - are drawn with.
+     * blended materials of the game - decals, the `*_alpha` presets - were drawn with.
      *
      * @param gl              the context
      * @param shader          the shader of the strip, null when the strip has none
@@ -661,14 +683,14 @@ public class Element {
             // card that faces away is part of the same canopy. Culling them hid a quarter of a crown
             // (Tree_Beech1: 220 799 px with culling against 244 273 px without it, same build).
             gl.glDisable(GL2.GL_CULL_FACE);
-        } else if (shader != null && shader.isGlass() && transparentPass) {
-            // the pane's own alpha is its transparency, and the pass has already drawn what stands behind it
+        } else if (shader != null && shader.isTransparent() && transparentPass) {
+            // the material's own alpha is its transparency, and what stands behind it is drawn already
             gl.glDisable(GL2.GL_ALPHA_TEST);
             gl.glEnable(GL2.GL_BLEND);
-            // a pane is a single quad: the window wall of the mod's cinema is 100 % outward-facing
-            // (PaneFacingProbe), so from inside it is culled away and reads as an opening
+            // a single quad - a pane, a sign - is meant to be seen from both sides; the window wall of the
+            // mod's cinema is 100 % outward-facing (PaneFacingProbe), so from inside it would be culled away
             gl.glDisable(GL2.GL_CULL_FACE);
-        } else if (shader != null && shader.isGlass()) {
+        } else if (shader != null && shader.isTransparent()) {
             gl.glDisable(GL2.GL_ALPHA_TEST);
             // outside the transparent pass there is nothing behind the pane but the clear colour, so it
             // keeps its own texture instead of pouring the view's background through the building ...

@@ -73,19 +73,78 @@ public class Shader {
      * True when this material belongs in the renderer's **transparent pass**: it is drawn after every opaque
      * material of the frame, blended with its own alpha and sorted back to front, so that what stands behind it
      * - the interior of a building, the wall behind a pane - is what it blends against instead of the clear
-     * colour. Taken out of that pass, a pane either shows its own texture flat (drawn opaque) or turns the
-     * whole window wall into a hole (blended wherever the draw order happens to put it).
+     * colour. Taken out of that pass, a blended material either blends against a half-drawn frame (the clear
+     * colour pouring through a window) or, drawn opaque, shows its own texture and nothing else.
      *
-     * Today this is the glass presets ({@link #isGlass()}). The `*_alpha` presets (`gta_alpha.sps`,
-     * `gta_normal_alpha.sps`, `gta_spec_alpha.sps`, ..., decals, and the mod's own glass under a generic
-     * `gta_default.sps` preset) are the candidates to join them, but they keep the old behaviour until that
-     * group is measured.
+     * The rule, measured over `unost_square.img` and `nj_01.img` (see `STATUS.md`):
+     *
+     * * **glass** ({@link #isGlass()}) always - 6 shader slots on 4 models in the mod's district;
+     * * an **alpha preset** (`gta_alpha.sps`, `gta_normal_alpha.sps`, `gta_emissive_alpha.sps`, ...):
+     *   the name says the material is blended by design. In `nj_01.img` that is 41 slots, most of them the
+     *   district's glass (`NJ01_GLASS`) and its night windows and neon;
+     * * a material whose **diffuse map carries transparency**, whatever its preset claims: the mod's glass
+     *   doors (`td_glass_door_l_DefaultMaterial_BaseColor`, 32 % of its texels below 0.5 alpha under a generic
+     *   `gta_default.sps`) and `prop_green_glassprop_green_glass_a` (100 %) are exported that way;
+     * * **not** a **cut-out** ({@link #isCutout()}): its alpha channel is a mask, and the alpha test that draws
+     *   it is what a leaf or a fence needs - blending it would wash it out (that is item 11 of `NEXT-STEPS.md`);
+     * * **not** a **decal** ({@link #isDecalPreset()}): a decal is coplanar with the surface it lies on (the
+     *   road markings measure 86 %, the rust stains 59 % of their texels below 0.5), so moving it behind that
+     *   surface costs it the depth test - in `nj_01.img` that is 190 slots of graffiti, road markings, shadows
+     *   and posters, and they keep the path that works for them today.
      *
      * @return true when the transparent pass draws this material
      */
     public boolean isTransparent() {
-        return isGlass();
+        if (isCutout() || isDecalPreset()) {
+            return false;
+        }
+        return isGlass() || isAlphaPreset() || textureHasAlpha;
     }
+
+    /**
+     * True when the preset of this material is one of the `*_alpha` family - `gta_alpha.sps`,
+     * `gta_normal_alpha.sps`, `gta_spec_alpha.sps`, `gta_emissive_alpha.sps`, `gta_emissivenight_alpha.sps`,
+     * `gta_normal_spec_alpha.sps`: the materials the game blends by design, glass and windows and neon.
+     *
+     * @return true when the preset marks this material as blended
+     */
+    public boolean isAlphaPreset() {
+        return shaderSps.toLowerCase().contains("alpha");
+    }
+
+    /**
+     * True when the preset of this material marks it as a **decal**: `gta_decal.sps`, `gta_decal_glue.sps`,
+     * `gta_normal_decal.sps`, `gta_spec_decal.sps`. A decal is a quad that lies *on* a surface (road markings,
+     * graffiti, rust, shadows, posters - 190 slots in `nj_01.img`, alpha 22-98 %), so it belongs in the pass
+     * that draws it immediately after the surface it belongs to, not in the transparent pass at the end of the
+     * frame, where it would lose the depth test against that surface.
+     *
+     * @return true when this material is a decal
+     */
+    public boolean isDecalPreset() {
+        return shaderSps.toLowerCase().contains("decal");
+    }
+
+    /**
+     * Whether the diffuse map this shader resolved uses its alpha channel as transparency (see
+     * {@code Texture.alpha()}). Set while the textures are bound, before the renderer asks
+     * {@link #isTransparent()}.
+     *
+     * @param textureHasAlpha true when the resolved diffuse map has a transparent alpha channel
+     */
+    public void setTextureHasAlpha(boolean textureHasAlpha) {
+        this.textureHasAlpha = textureHasAlpha;
+    }
+
+    /**
+     * @return true when the diffuse map of this material carries a transparent alpha channel
+     */
+    public boolean hasTransparentTexture() {
+        return textureHasAlpha;
+    }
+
+    /** set while the textures are bound: the resolved diffuse map uses its alpha as transparency */
+    private boolean textureHasAlpha = false;
 
     /**
      * Create an empty shader

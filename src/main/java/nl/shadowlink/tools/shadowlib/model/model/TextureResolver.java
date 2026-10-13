@@ -21,4 +21,17 @@ public interface TextureResolver {
      * @return the GL texture id of that texture, or 0 when it cannot be found
      */
     int resolve(TextureDic dictionary, String textureName);
+
+    /**
+     * Whether the texture behind a GL id carries an alpha channel that is used as transparency.
+     *
+     * The renderer needs this to decide whether a material belongs in its transparent pass, and the resolver
+     * is the only one that has held the texture itself (see {@code Texture.alpha()}).
+     *
+     * @param glTextureId a GL texture id this resolver handed out
+     * @return true when that texture's alpha channel is transparent, false when it is opaque one
+     */
+    default boolean isTransparentTexture(int glTextureId) {
+        return false;
+    }
 }

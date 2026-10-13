@@ -31,5 +31,23 @@ class Texture(
     @JvmField
     var glTextureId = 0
 
+    /** the alpha statistics of this texture, decoded on first use by [alpha] */
+    private var alphaStats: AlphaStats? = null
+
+    /**
+     * What the alpha channel of this texture holds, decoded once from its DXT blocks and kept (see
+     * [decodeAlphaStats]). The renderer asks this to decide whether a material has to be blended at all: a
+     * diffuse map whose alpha is 1 everywhere looks the same whether it is blended or not, while one with a
+     * real alpha channel disappears into the background when it is drawn opaque.
+     *
+     * @return the statistics, [AlphaStats.OPAQUE] for a texture without a decodable alpha channel
+     */
+    fun alpha(): AlphaStats {
+        alphaStats?.let { return it }
+        val stats = decodeAlphaStats()
+        alphaStats = stats
+        return stats
+    }
+
     var alphaTexName: String? = null
 }

@@ -390,8 +390,10 @@ class RenderMap(
         println("   shader slots without a diffuse map: " + Element.shadersWithoutTextureName
             + ", with a name no dictionary has: " + Element.shadersWithoutTexture)
         if (Element.transparentShaders > 0) {
-            println("   drawn in the transparent pass (glass): " + Element.transparentShaders
-                + " shader slots on " + modelsWithGlass + " models")
+            println("   drawn in the transparent pass: " + Element.transparentShaders
+                + " shader slots on " + modelsWithGlass + " models (glass " + Element.transparentGlass
+                + ", *_alpha presets " + Element.transparentAlphaPresets
+                + ", transparent diffuse map " + Element.transparentTextures + ")")
         }
         if (Element.unknownShaderParams.isNotEmpty()) {
             Element.unknownShaderParams.forEach { println("   " + it) }

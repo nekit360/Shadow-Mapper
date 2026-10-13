@@ -30,6 +30,9 @@ class GlTextureCache(private val gl: GL2) : TextureResolver {
     /** the dictionaries that were asked for a name, by file name - for the log, and it holds no data */
     private val dictionaryNames = HashSet<String>()
 
+    /** GL ids whose texture carries a transparent alpha channel - the ids, not the textures themselves */
+    private val transparentIds = HashSet<Int>()
+
     /**
      * Called when a name is in none of the dictionaries the model brought in.
      *
@@ -103,6 +106,11 @@ class GlTextureCache(private val gl: GL2) : TextureResolver {
             uploadedTextures++
             uploadedBytes += texture.data.size.toLong()
         }
+        // the alpha channel of the diffuse map decides whether the material has to be blended at all, and
+        // only here has anybody the texture itself (see Texture.alpha); ids only, so nothing is pinned
+        if (texture.alpha().carriesTransparency) {
+            transparentIds.add(texture.glTextureId)
+        }
         bound++
         holder?.let { dictionaryNames.add(it.fileName.lowercase()) }
         if (dictionary == null) {
@@ -110,6 +118,12 @@ class GlTextureCache(private val gl: GL2) : TextureResolver {
         }
         return texture.glTextureId
     }
+
+    /**
+     * Whether the texture behind a GL id carries a transparent alpha channel: what the renderer asks before it
+     * decides that a material belongs in the transparent pass (see {@code Shader.isTransparent()}).
+     */
+    override fun isTransparentTexture(glTextureId: Int): Boolean = transparentIds.contains(glTextureId)
 
     /** Deletes every texture this cache put on the card (the map was released/reloaded). */
     fun dispose() {
@@ -121,6 +135,7 @@ class GlTextureCache(private val gl: GL2) : TextureResolver {
         dictionaryNames.clear()
         requestedNames.clear()
         missingNames.clear()
+        transparentIds.clear()
         uploadedTextures = 0
         uploadedBytes = 0
         bound = 0

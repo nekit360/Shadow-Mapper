@@ -100,9 +100,10 @@ internal class ShaderPresetTest {
         assertFalse(shader.isGlass)
     }
 
-    private fun transparent(sps: String?): Boolean {
+    private fun transparent(sps: String?, textureHasAlpha: Boolean = false): Boolean {
         val shader = Shader()
         shader.shaderSps = sps
+        shader.setTextureHasAlpha(textureHasAlpha)
         return shader.isTransparent
     }
 
@@ -115,20 +116,50 @@ internal class ShaderPresetTest {
     }
 
     @Test
-    fun `nothing else is drawn in the transparent pass`() {
-        assertFalse(transparent("gta_alpha.sps"),
-            "the *_alpha presets keep blending where they are until that group is measured")
-        assertFalse(transparent("gta_normal_alpha.sps"))
-        assertFalse(transparent("gta_decal.sps"))
-        assertFalse(transparent("gta_cutout.sps"))
-        assertFalse(transparent("gta_normal_spec.sps"))
+    fun `the transparent pass draws the alpha presets as well`() {
+        assertTrue(transparent("gta_alpha.sps"))
+        assertTrue(transparent("gta_normal_alpha.sps"))
+        assertTrue(transparent("gta_spec_alpha.sps"))
+        assertTrue(transparent("gta_emissive_alpha.sps"))
+        assertTrue(transparent("gta_emissivenight_alpha.sps"))
+        assertTrue(transparent("gta_normal_spec_alpha.sps"))
+    }
+
+    @Test
+    fun `a generic preset with a transparent diffuse map is drawn in the transparent pass`() {
+        assertTrue(transparent("gta_default.sps", textureHasAlpha = true),
+            "the mod exports its glass doors as gta_default.sps with a transparent map")
+        assertTrue(transparent("gta_normal_spec.sps", textureHasAlpha = true))
+    }
+
+    @Test
+    fun `a material with an opaque diffuse map and a generic preset is not`() {
         assertFalse(transparent("gta_default.sps"))
+        assertFalse(transparent("gta_normal_spec.sps"))
+        assertFalse(transparent("gta_terrain_va_2lyr.sps"))
         assertFalse(transparent(""))
         assertFalse(transparent(null))
     }
 
     @Test
-    fun `only an element with glass asks for the second pass`() {
+    fun `a cut-out stays a cut-out however transparent its map is`() {
+        assertFalse(transparent("gta_cutout.sps", textureHasAlpha = true),
+            "the alpha channel of a leaf is a mask, and the alpha test is what draws it")
+        assertFalse(transparent("gta_trees.sps", textureHasAlpha = true))
+        assertFalse(transparent("gta_cutout_fence.sps", textureHasAlpha = true))
+    }
+
+    @Test
+    fun `a decal keeps the path that works for it`() {
+        assertFalse(transparent("gta_decal.sps", textureHasAlpha = true),
+            "a decal lies on the surface it belongs to and would lose the depth test behind it")
+        assertFalse(transparent("gta_decal_glue.sps", textureHasAlpha = true))
+        assertFalse(transparent("gta_normal_decal.sps"))
+        assertFalse(transparent("gta_spec_decal.sps"))
+    }
+
+    @Test
+    fun `only an element with a transparent material asks for the second pass`() {
         val opaque = Element()
         opaque.createShader(listOf("alumox"), null, "gta_normal_spec.sps")
         assertFalse(opaque.hasTransparentMaterials(), "an opaque model needs no glass display list")
