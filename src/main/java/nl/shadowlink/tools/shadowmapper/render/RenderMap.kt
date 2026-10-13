@@ -29,6 +29,17 @@ class RenderMap(
 
     private var glDisplayList: IntArray = IntArray(0)
 
+    /**
+     * The transparent materials of the same models, in parallel with [glDisplayList]: entry `listID` holds
+     * the display list with only the glass of that model, 0 when the model has none. A model's glass is in
+     * this list and in no other, so the pane is not drawn by the opaque pass and can blend with what stands
+     * behind it (see [drawTransparentPass]).
+     */
+    private var glTransparentList: IntArray = IntArray(0)
+
+    /** the glass instances of the frame being drawn, collected by the opaque pass */
+    private val glassInstances = ArrayList<GlassInstance>()
+
     /** GL textures of the loaded map; rebuilt on every load so a reload cannot leak them. */
     private var textureCache: GlTextureCache? = null
 
@@ -65,6 +76,7 @@ class RenderMap(
                 added = false
                 println("Loading added model finished")
             }
+            glassInstances.clear()
             gl.glPushName(PickingType.map)
             fm.ipls.forEachIndexed { iplIndex, ipl ->
                 if (ipl.selected && ipl.itemsLoaded) {
@@ -78,12 +90,17 @@ class RenderMap(
                                 } else {
                                     gl.glColor3f(1f, 1f, 1f)
                                 }
-                                gl.glPushMatrix()
-                                gl.glTranslatef(item.position.x, item.position.y, item.position.z)
-                                gl.glRotatef(item.axisAngle.w, item.axisAngle.x, item.axisAngle.y, item.axisAngle.z)
-                                gl.glCallList(glDisplayList[item.glListID])
-                                gl.glPopMatrix()
+                                drawInstance(gl, item, glDisplayList)
                                 gl.glPopName()
+                                // this instance's glass is in no other list: it is drawn at the end of the
+                                // frame, over every opaque material, so it blends with what stands behind it
+                                val glassList = glassListId(item)
+                                if (glassList != 0) {
+                                    glassInstances.add(
+                                        GlassInstance(iplIndex, instanceIndex, glassList,
+                                            getDistance(camera.pos, item.position), item)
+                                    )
+                                }
                             }
                         }
                     }
@@ -91,13 +108,78 @@ class RenderMap(
                 }
             }
             gl.glPopName()
+            drawTransparentPass(gl)
         }
         gl.glFlush()
+    }
+
+    /** One instance whose model carries glass, collected while the opaque pass draws the frame. */
+    private class GlassInstance(
+        val iplIndex: Int,
+        val instanceIndex: Int,
+        val listId: Int,
+        val distance: Float,
+        val item: Item_INST,
+    )
+
+    /** The glass display list of an instance's model, 0 when it has none. */
+    private fun glassListId(item: Item_INST): Int {
+        val listId = item.glListID
+        return if (listId > 0 && listId < glTransparentList.size) glTransparentList[listId] else 0
+    }
+
+    /** Draw one instance of the map: the transform of the instance and the display list of its model. */
+    private fun drawInstance(gl: GL2, item: Item_INST, list: IntArray) {
+        gl.glPushMatrix()
+        gl.glTranslatef(item.position.x, item.position.y, item.position.z)
+        gl.glRotatef(item.axisAngle.w, item.axisAngle.x, item.axisAngle.y, item.axisAngle.z)
+        gl.glCallList(list[item.glListID])
+        gl.glPopMatrix()
+    }
+
+    /**
+     * The second pass of a frame: every instance whose model has glass, blended, two-sided and sorted far to
+     * near, over the opaque material the first pass left behind.
+     *
+     * The glass is in no other display list, so a pane blends with the interior, the wall or the street that
+     * stands behind it - the thing the game blends it with - instead of with the colour the view was cleared
+     * with. Depth *testing* stays on, so a wall in front of the pane still hides it; depth *writing* is off,
+     * so two panes behind one another can blend with each other, and so a pane cannot hide the interior it is
+     * supposed to show.
+     */
+    private fun drawTransparentPass(gl: GL2) {
+        if (glassInstances.isEmpty()) return
+        glassInstances.sortByDescending { it.distance }
+        gl.glEnable(GL2.GL_DEPTH_TEST)
+        gl.glEnable(GL2.GL_BLEND)
+        gl.glBlendFunc(GL2.GL_SRC_ALPHA, GL2.GL_ONE_MINUS_SRC_ALPHA)
+        gl.glDepthMask(false)
+        gl.glDisable(GL2.GL_ALPHA_TEST)
+        gl.glDisable(GL2.GL_CULL_FACE)
+        gl.glPushName(PickingType.map)
+        glassInstances.forEach { glass ->
+            gl.glPushName(glass.iplIndex)
+            gl.glPushName(glass.instanceIndex)
+            if (glass.item.selected) {
+                gl.glColor3f(0.9f, 0f, 0f)
+            } else {
+                gl.glColor3f(1f, 1f, 1f)
+            }
+            drawInstance(gl, glass.item, glTransparentList)
+            gl.glPopName()
+            gl.glPopName()
+        }
+        gl.glPopName()
+        // the pass must not leak into what is drawn after the map (the water, the next frame): both are
+        // state a display list elsewhere may never set for itself
+        gl.glDepthMask(true)
+        gl.glEnable(GL2.GL_CULL_FACE)
     }
 
     private fun loadMap(gl: GL2) {
         // Clear existing display list
         glDisplayList.forEach { dl -> gl.glDeleteLists(dl, 1) }
+        glTransparentList.forEach { dl -> gl.glDeleteLists(dl, 1) }
         // and the textures of the previous load: every load builds new dictionaries
         textureCache?.dispose()
         val glTextures = GlTextureCache(gl)
@@ -157,6 +239,7 @@ class RenderMap(
             }
         }
         glDisplayList = IntArray(ideList.size + 1)
+        glTransparentList = IntArray(ideList.size + 1)
         println("ideList Size: " + ideList.size)
         // the rest of the work is scanning every image for every model they may contain
         val phase2Total = (fm.imgs.size * ideList.size).coerceAtLeast(1)
@@ -170,6 +253,7 @@ class RenderMap(
         var fromNeighbour = 0
         Element.resetTextureDiagnostics()
         val whiteModels = ArrayList<String>()
+        var modelsWithGlass = 0
         for (imgNumber in fm.imgs.indices) {
             val currentImage = fm.imgs[imgNumber].fileName
             val rf = ReadFunctions(fm.imgs[imgNumber].path)
@@ -246,7 +330,9 @@ class RenderMap(
                         gl.glNewList(glDisplayList[i + 1], GL2.GL_COMPILE)
                         try {
                             if (mdl != null) {
-                                mdl.render(gl)
+                                // everything but the glass: the transparent materials get a list of their own,
+                                // because they are drawn at the end of the frame and nowhere else
+                                mdl.renderOpaque(gl)
                             } else {
                                 drawCube(gl, 10f, 0.1f, 0.5f, 0.9f)
                             }
@@ -254,6 +340,25 @@ class RenderMap(
                             println("Failed to render " + itemName + ": " + t)
                         }
                         gl.glEndList()
+                        if (mdl != null && mdl.hasTransparentMaterials()) {
+                            val glassList = gl.glGenLists(1)
+                            gl.glNewList(glassList, GL2.GL_COMPILE)
+                            var glassOk = true
+                            try {
+                                mdl.renderTransparent(gl)
+                            } catch (t: Throwable) {
+                                // a half-compiled list would be drawn in the transparent pass, so drop it
+                                println("Failed to render the glass of " + itemName + ": " + t)
+                                glassOk = false
+                            }
+                            gl.glEndList()
+                            if (glassOk) {
+                                glTransparentList[i + 1] = glassList
+                                modelsWithGlass++
+                            } else {
+                                gl.glDeleteLists(glassList, 1)
+                            }
+                        }
                         mdl?.reset()
                         boolList[i] = true
                     }
@@ -284,6 +389,10 @@ class RenderMap(
         }
         println("   shader slots without a diffuse map: " + Element.shadersWithoutTextureName
             + ", with a name no dictionary has: " + Element.shadersWithoutTexture)
+        if (Element.transparentShaders > 0) {
+            println("   drawn in the transparent pass (glass): " + Element.transparentShaders
+                + " shader slots on " + modelsWithGlass + " models")
+        }
         if (Element.unknownShaderParams.isNotEmpty()) {
             Element.unknownShaderParams.forEach { println("   " + it) }
         }
@@ -300,6 +409,11 @@ class RenderMap(
         for (i in tempList.indices) {
             glDisplayList[i] = tempList[i]
         }
+        val tempGlass = glTransparentList
+        glTransparentList = IntArray(tempGlass.size + 1)
+        for (i in tempGlass.indices) {
+            glTransparentList[i] = tempGlass[i]
+        }
         var item: ImgItem? = null
         var imgID = -1
         var i = 0
@@ -313,6 +427,8 @@ class RenderMap(
         }
         if (item != null) {
             val rf = ReadFunctions(fm.imgs[imgID].fileName)
+            // the item variable is reassigned to the model's .wtd below, so keep the model's name here
+            val loadedModelName = item.name
             rf.seek(item.offset)
             var br: ByteReader? = rf.getByteReader(item.size)
             var mdl: Model? = null
@@ -340,11 +456,28 @@ class RenderMap(
             glDisplayList[tempList.size] = gl.glGenLists(1)
             gl.glNewList(glDisplayList[tempList.size], GL2.GL_COMPILE)
             if (mdl != null) {
-                mdl.render(gl)
+                mdl.renderOpaque(gl)
             } else {
                 drawCube(gl, 10f, 0.1f, 0.5f, 0.9f)
             }
             gl.glEndList()
+            if (mdl != null && mdl.hasTransparentMaterials()) {
+                val glassList = gl.glGenLists(1)
+                gl.glNewList(glassList, GL2.GL_COMPILE)
+                var glassOk = true
+                try {
+                    mdl.renderTransparent(gl)
+                } catch (t: Throwable) {
+                    println("Failed to render the glass of " + loadedModelName + ": " + t)
+                    glassOk = false
+                }
+                gl.glEndList()
+                if (glassOk) {
+                    glTransparentList[tempList.size] = glassList
+                } else {
+                    gl.glDeleteLists(glassList, 1)
+                }
+            }
             mdl!!.reset()
             rf.closeFile()
             tempIPL!!.glListID = tempList.size

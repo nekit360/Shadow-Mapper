@@ -423,6 +423,42 @@ public class Model {
     }
 
     /**
+     * Render everything of this model that is not a transparent material - the renderer's first pass.
+     *
+     * @param gl the context
+     */
+    public void renderOpaque(GL2 gl) {
+        for (int i = 0; i < elements.size(); i++) {
+            elements.get(i).renderOpaque(gl);
+        }
+    }
+
+    /**
+     * Render only the transparent materials of this model - the renderer's second, blended pass.
+     *
+     * @param gl the context
+     */
+    public void renderTransparent(GL2 gl) {
+        for (int i = 0; i < elements.size(); i++) {
+            elements.get(i).renderTransparent(gl);
+        }
+    }
+
+    /**
+     * True when this model has a material the transparent pass draws, i.e. it needs a second display list.
+     *
+     * @return true when any element of this model has a transparent material
+     */
+    public boolean hasTransparentMaterials() {
+        for (int i = 0; i < elements.size(); i++) {
+            if (elements.get(i).hasTransparentMaterials()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Reset this model
      */
     public void reset() {

@@ -99,4 +99,43 @@ internal class ShaderPresetTest {
         assertTrue(shader.isCutout)
         assertFalse(shader.isGlass)
     }
+
+    private fun transparent(sps: String?): Boolean {
+        val shader = Shader()
+        shader.shaderSps = sps
+        return shader.isTransparent
+    }
+
+    @Test
+    fun `the transparent pass draws the glass presets`() {
+        assertTrue(transparent("gta_glass_spec.sps"))
+        assertTrue(transparent("gta_glass_reflect.sps"))
+        assertTrue(transparent("gta_glass_normal_spec_reflect.sps"))
+        assertTrue(transparent("GTA_GLASS_EMISSIVENIGHT.SPS"), "the preset is compared without case")
+    }
+
+    @Test
+    fun `nothing else is drawn in the transparent pass`() {
+        assertFalse(transparent("gta_alpha.sps"),
+            "the *_alpha presets keep blending where they are until that group is measured")
+        assertFalse(transparent("gta_normal_alpha.sps"))
+        assertFalse(transparent("gta_decal.sps"))
+        assertFalse(transparent("gta_cutout.sps"))
+        assertFalse(transparent("gta_normal_spec.sps"))
+        assertFalse(transparent("gta_default.sps"))
+        assertFalse(transparent(""))
+        assertFalse(transparent(null))
+    }
+
+    @Test
+    fun `only an element with glass asks for the second pass`() {
+        val opaque = Element()
+        opaque.createShader(listOf("alumox"), null, "gta_normal_spec.sps")
+        assertFalse(opaque.hasTransparentMaterials(), "an opaque model needs no glass display list")
+
+        val withGlass = Element()
+        withGlass.createShader(listOf("bt1_03_rsn_rls_brick"), null, "gta_normal_spec.sps")
+        withGlass.createShader(listOf("bx_glass"), null, "gta_glass_reflect.sps")
+        assertTrue(withGlass.hasTransparentMaterials())
+    }
 }

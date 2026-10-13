@@ -58,14 +58,33 @@ public class Shader {
      *
      * The alpha channel of such a pane is the transparency of the glass itself, and the game blends it: 29 % to
      * 58 % mean alpha measured on the panes of the modded district, i.e. most of what stands behind the pane
-     * shows through. The game can afford that - it draws the interior, or the world, behind the glass. An editor
-     * has nothing behind a building's glass but the colour the view was cleared with, so a blended pane reads as
-     * a hole: the sky pours through the window and the building looks as if its glazing were missing.
+     * shows through. In the game there is something behind it - the interior, or the world - so the pane reads
+     * as glazing; in the editor there is nothing but the colour the view was cleared with, which is why a
+     * blended pane used to read as a hole. Such a material is therefore drawn in the renderer's **transparent
+     * pass** (see {@link #isTransparent()}), where it blends against what the opaque pass left behind.
      *
-     * @return true when this material is a glass surface, which is drawn opaque
+     * @return true when this material is a glass surface
      */
     public boolean isGlass() {
         return shaderSps.toLowerCase().contains("glass");
+    }
+
+    /**
+     * True when this material belongs in the renderer's **transparent pass**: it is drawn after every opaque
+     * material of the frame, blended with its own alpha and sorted back to front, so that what stands behind it
+     * - the interior of a building, the wall behind a pane - is what it blends against instead of the clear
+     * colour. Taken out of that pass, a pane either shows its own texture flat (drawn opaque) or turns the
+     * whole window wall into a hole (blended wherever the draw order happens to put it).
+     *
+     * Today this is the glass presets ({@link #isGlass()}). The `*_alpha` presets (`gta_alpha.sps`,
+     * `gta_normal_alpha.sps`, `gta_spec_alpha.sps`, ..., decals, and the mod's own glass under a generic
+     * `gta_default.sps` preset) are the candidates to join them, but they keep the old behaviour until that
+     * group is measured.
+     *
+     * @return true when the transparent pass draws this material
+     */
+    public boolean isTransparent() {
+        return isGlass();
     }
 
     /**
