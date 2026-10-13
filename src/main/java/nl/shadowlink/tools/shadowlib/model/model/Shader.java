@@ -53,6 +53,22 @@ public class Shader {
     }
 
     /**
+     * True when this material is a **glass** surface (`gta_glass_spec.sps`, `gta_glass_reflect.sps`,
+     * `gta_glass_normal_spec_reflect.sps`, `gta_glass_emissivenight.sps`, ...).
+     *
+     * The alpha channel of such a pane is the transparency of the glass itself, and the game blends it: 29 % to
+     * 58 % mean alpha measured on the panes of the modded district, i.e. most of what stands behind the pane
+     * shows through. The game can afford that - it draws the interior, or the world, behind the glass. An editor
+     * has nothing behind a building's glass but the colour the view was cleared with, so a blended pane reads as
+     * a hole: the sky pours through the window and the building looks as if its glazing were missing.
+     *
+     * @return true when this material is a glass surface, which is drawn opaque
+     */
+    public boolean isGlass() {
+        return shaderSps.toLowerCase().contains("glass");
+    }
+
+    /**
      * Create an empty shader
      */
     public Shader(){

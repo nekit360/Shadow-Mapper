@@ -65,4 +65,38 @@ internal class ShaderPresetTest {
         assertEquals("", element.getShader(0).shaderSps)
         assertFalse(element.getShader(0).isCutout)
     }
+
+    private fun glass(sps: String?): Boolean {
+        val shader = Shader()
+        shader.shaderSps = sps
+        return shader.isGlass
+    }
+
+    @Test
+    fun `the glass presets are recognised`() {
+        assertTrue(glass("gta_glass_spec.sps"))
+        assertTrue(glass("gta_glass_reflect.sps"))
+        assertTrue(glass("gta_glass_normal_spec_reflect.sps"))
+        assertTrue(glass("gta_glass_emissivenight.sps"))
+        assertTrue(glass("GTA_GLASS_SPEC.SPS"), "the preset is compared without case")
+    }
+
+    @Test
+    fun `the other presets are not glass`() {
+        assertFalse(glass("gta_alpha.sps"), "a blended material is not a pane and keeps blending")
+        assertFalse(glass("gta_cutout.sps"))
+        assertFalse(glass("gta_normal_spec.sps"))
+        assertFalse(glass("gta_default.sps"))
+        assertFalse(glass(""))
+        assertFalse(glass(null))
+    }
+
+    @Test
+    fun `a cut-out is not a glass`() {
+        val shader = Shader()
+        shader.shaderSps = "gta_cutout.sps"
+
+        assertTrue(shader.isCutout)
+        assertFalse(shader.isGlass)
+    }
 }

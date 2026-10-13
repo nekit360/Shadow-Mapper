@@ -573,8 +573,12 @@ public class Element {
      * part of the card as well, so the background shines through the leaves and a tree looks washed
      * out and pale at every distance, and its leaves take on the colour of whatever is behind them.
      *
+     * A **glass** material is drawn opaque for the opposite reason: its alpha channel is the transparency
+     * of the pane, and behind a window an editor has nothing but the colour the view was cleared with, so
+     * a blended pane pours the sky through the building (see {@link Shader#isGlass()}).
+     *
      * Everything else keeps the previous behaviour (blending on, no alpha test), which is what the
-     * blended materials of the game - glass, decals, the `gta_alpha.sps` presets - are drawn with.
+     * blended materials of the game - decals, the `gta_alpha.sps` presets - are drawn with.
      *
      * @param gl     the context
      * @param shader the shader of the strip, null when the strip has none
@@ -590,7 +594,12 @@ public class Element {
             gl.glDisable(GL2.GL_CULL_FACE);
         } else {
             gl.glDisable(GL2.GL_ALPHA_TEST);
-            gl.glEnable(GL2.GL_BLEND);
+            // a glass pane keeps its own colour instead of letting the view's clear colour through it
+            if (shader == null || !shader.isGlass()) {
+                gl.glEnable(GL2.GL_BLEND);
+            } else {
+                gl.glDisable(GL2.GL_BLEND);
+            }
             gl.glEnable(GL2.GL_CULL_FACE);
         }
     }
