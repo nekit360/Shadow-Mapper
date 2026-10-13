@@ -592,14 +592,17 @@ public class Element {
             // card that faces away is part of the same canopy. Culling them hid a quarter of a crown
             // (Tree_Beech1: 220 799 px with culling against 244 273 px without it, same build).
             gl.glDisable(GL2.GL_CULL_FACE);
+        } else if (shader != null && shader.isGlass()) {
+            gl.glDisable(GL2.GL_ALPHA_TEST);
+            // a glass pane keeps its own colour instead of letting the view's clear colour through it ...
+            gl.glDisable(GL2.GL_BLEND);
+            // ... and it is drawn from both sides, because a pane is a single quad: the window wall of the
+            // mod's cinema is 100 % outward-facing (PaneFacingProbe), so from inside the arcade it was culled
+            // away and read as an opening with the world behind it, which is what was reported.
+            gl.glDisable(GL2.GL_CULL_FACE);
         } else {
             gl.glDisable(GL2.GL_ALPHA_TEST);
-            // a glass pane keeps its own colour instead of letting the view's clear colour through it
-            if (shader == null || !shader.isGlass()) {
-                gl.glEnable(GL2.GL_BLEND);
-            } else {
-                gl.glDisable(GL2.GL_BLEND);
-            }
+            gl.glEnable(GL2.GL_BLEND);
             gl.glEnable(GL2.GL_CULL_FACE);
         }
     }
