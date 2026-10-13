@@ -174,11 +174,13 @@ public class Element {
      *
      * @param textureNames every name the .wdr shader carries for its diffuse map, preferred one first
      * @param params       the parameters of the .wdr shader, see {@link Shader#getParams()}
+     * @param shaderSps    the preset of the .wdr shader, see {@link Shader#getShaderSps()}
      */
-    public void createShader(java.util.List<String> textureNames, String params) {
+    public void createShader(java.util.List<String> textureNames, String params, String shaderSps) {
         Shader temp = new Shader();
         temp.setTextureNames(textureNames);
         temp.setParams(params);
+        temp.setShaderSps(shaderSps);
         shaders.add(temp);
     }
 
@@ -550,13 +552,53 @@ public class Element {
                 // index with the shader count, so a strip beyond the shader list bound the wrong one
                 int shaderIndex = strips.get(i).getShaderNumber();
                 int glTex = 0;
+                Shader stripShader = null;
                 if (shaderIndex >= 0 && shaderIndex < shaders.size()) {
-                    glTex = shaders.get(shaderIndex).getGLTex();
+                    stripShader = shaders.get(shaderIndex);
+                    glTex = stripShader.getGLTex();
                 }
+                applyAlphaState(gl, stripShader);
                 gl.glBindTexture(gl.GL_TEXTURE_2D, glTex);
                 strips.get(i).render(gl);
             }
         }
     }
+
+    /**
+     * The alpha state of one material, from its shader preset.
+     *
+     * A cut-out material (leaves, bare branches, fences) is drawn with an **alpha test** and without
+     * blending: the alpha channel of the diffuse map says which texels exist. Drawing such a material
+     * with blending instead - which is what the renderer did for everything - paints the transparent
+     * part of the card as well, so the background shines through the leaves and a tree looks washed
+     * out and pale at every distance, and its leaves take on the colour of whatever is behind them.
+     *
+     * Everything else keeps the previous behaviour (blending on, no alpha test), which is what the
+     * blended materials of the game - glass, decals, the `gta_alpha.sps` presets - are drawn with.
+     *
+     * @param gl     the context
+     * @param shader the shader of the strip, null when the strip has none
+     */
+    private void applyAlphaState(GL2 gl, Shader shader) {
+        if (shader != null && shader.isCutout()) {
+            gl.glEnable(GL2.GL_ALPHA_TEST);
+            gl.glAlphaFunc(GL2.GL_GREATER, CUTOUT_ALPHA);
+            gl.glDisable(GL2.GL_BLEND);
+            // ... and without back-face culling, because a cut-out is thin: a leaf is one card, and the
+            // card that faces away is part of the same canopy. Culling them hid a quarter of a crown
+            // (Tree_Beech1: 220 799 px with culling against 244 273 px without it, same build).
+            gl.glDisable(GL2.GL_CULL_FACE);
+        } else {
+            gl.glDisable(GL2.GL_ALPHA_TEST);
+            gl.glEnable(GL2.GL_BLEND);
+            gl.glEnable(GL2.GL_CULL_FACE);
+        }
+    }
+
+    /**
+     * The alpha a cut-out material keeps a texel at. 0.5 is the value the game's cut-out presets use,
+     * and it is the point where a leaf keeps its own colour instead of taking on the background's.
+     */
+    private static final float CUTOUT_ALPHA = 0.5f;
 
 }

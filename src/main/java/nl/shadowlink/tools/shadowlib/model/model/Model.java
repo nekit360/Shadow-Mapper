@@ -163,8 +163,11 @@ public class Model {
         for (int i = 0; i < sys.shaderGroup.Shaders.Count; i++) {
             ShaderFx shaderFx = sys.shaderGroup.Shaders._items.get(i);
             java.util.List<String> textureNames = shaderFx.shader.getTextureNames();
+            // the preset ("gta_trees.sps", "gta_cutout.sps", ...) travels with the shader as well: it is
+            // what tells the renderer to cut this material up with an alpha test instead of blending it
             element.createShader(textureNames,
-                textureNames.isEmpty() ? shaderFx.shader.describeParams() : null);
+                textureNames.isEmpty() ? shaderFx.shader.describeParams() : null,
+                shaderFx.ShaderSPS);
         }
     }
 

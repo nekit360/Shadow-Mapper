@@ -102,6 +102,12 @@ class RenderWater(
         }
         gl.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA)
         gl.glEnable(GL.GL_BLEND)
+        // a model drawn before this one may have left the alpha test of a cut-out material on (leaves,
+        // fences) and its back-face culling off: water is a blended, culled surface, so it states both
+        // for itself instead of inheriting whatever the last model left behind
+        gl.glDisable(GL2.GL_ALPHA_TEST)
+        gl.glEnable(GL2.GL_CULL_FACE)
+        gl.glCullFace(GL2.GL_BACK)
         gl.glBegin(GL2.GL_QUADS)
         fm.waters[0].planes.forEachIndexed { index, plane ->
             // a selected plane is tinted red so it can be told apart from the rest
