@@ -147,7 +147,7 @@ public class Model {
      */
     private void createModelFromDrawable(Element element, DrawableModel sys, int sysSize, byte[] stream, ByteReader br) {
         createShadersFromDrawable(element, sys);
-        addDrawableGeometry(element, sys, sysSize, stream);
+        addDrawableGeometry(element, sys, sysSize, stream, null);
         attachEmbeddedDictionary(element, sys, sysSize, br);
     }
 
@@ -171,8 +171,20 @@ public class Model {
         }
     }
 
-    /** The geometry of a drawable (level of detail 0) as strips on the element. */
-    private void addDrawableGeometry(Element element, DrawableModel sys, int sysSize, byte[] stream) {
+    /**
+     * The geometry of a drawable (level of detail 0) as strips on the element.
+     *
+     * The strip a geometry goes into is the one `createStrip` just appended - **not** the geometry's own
+     * index: one element collects the pieces of a whole fragment, the geometry index restarts at 0 for
+     * every piece while the strips keep being appended, and passing the geometry index routed every
+     * piece behind the first into the first piece's strips (`cj_gb_bench_2`: 30 strips, 27 of them empty,
+     * the other three a tangle of every piece's vertices).
+     *
+     * @param transform the piece's placement in the fragment (see `FragTypeChild.transform`), null for a
+     *                  drawable that is already in place - a `.wdr`, a `.wdd` group's drawable, or a
+     *                  fragment's own main drawable
+     */
+    private void addDrawableGeometry(Element element, DrawableModel sys, int sysSize, byte[] stream, float[] transform) {
         if (sys.mModelCollection == null || sys.mModelCollection.length == 0
                 || sys.mModelCollection[0]._items.isEmpty()) {
             return;
@@ -192,13 +204,14 @@ public class Model {
                 shaderIndex = test.ShaderMappings.Values.get(i);
             }
             element.createStrip(geo.FaceCount, shaderIndex);
+            int stripIndex = element.getStripCount() - 1;
             // //Message.displayMsgLow("Adding vertices");
 
             mf.addVertices(element, stream, geo.vertexBuffer.DataOffset + sysSize, geo.indexBuffer.DataOffset + sysSize, geo.VertexCount,
-                    geo.FaceCount, geo.VertexStride, i);
+                    geo.FaceCount, geo.VertexStride, stripIndex, transform);
             // //Message.displayMsgLow("Adding polygons");
             mf.addPolygons(element, stream, geo.vertexBuffer.DataOffset + sysSize, geo.indexBuffer.DataOffset + sysSize, geo.VertexCount,
-                    geo.FaceCount, geo.VertexStride, i);
+                    geo.FaceCount, geo.VertexStride, stripIndex);
         }
     }
 
@@ -315,9 +328,12 @@ public class Model {
         attachEmbeddedDictionary(element, wft.mainDrawable, sysSize, br);
         // some fragments carry the whole mesh in their own drawable (the furniture and the cutscene
         // characters do), others have it in the pieces only - the fence has an empty main drawable
-        addDrawableGeometry(element, wft.mainDrawable, sysSize, stream);
+        addDrawableGeometry(element, wft.mainDrawable, sysSize, stream, null);
+        // every piece brings its own placement: its geometry is in its own local space around the
+        // origin (FragTypeChild.transform), and the two lists are parallel
+        java.util.Iterator<float[]> transforms = wft.childTransforms.iterator();
         for (DrawableModel piece : wft.childDrawables) {
-            addDrawableGeometry(element, piece, sysSize, stream);
+            addDrawableGeometry(element, piece, sysSize, stream, transforms.next());
         }
         elements.add(element);
     }

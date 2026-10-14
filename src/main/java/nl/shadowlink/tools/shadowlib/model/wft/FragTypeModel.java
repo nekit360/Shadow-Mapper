@@ -53,6 +53,13 @@ public class FragTypeModel {
     /** the drawables of the `fragTypeChild` entries - here is the geometry */
     public final LinkedList<DrawableModel> childDrawables = new LinkedList<>();
 
+    /**
+     * The placement of each piece, parallel to [childDrawables] (see `FragTypeChild.transform`): the
+     * geometry of a piece is in its own local space around the origin, and this is what moves it into
+     * the fragment.
+     */
+    public final LinkedList<float[]> childTransforms = new LinkedList<>();
+
     /** children that could not be read at all (a broken one must not lose the whole fragment) */
     public int failedChildren = 0;
 
@@ -115,6 +122,7 @@ public class FragTypeModel {
                     continue;
                 }
                 childDrawables.add(drawable);
+                childTransforms.add(child.transform);
             } catch (Throwable t) {
                 failedChildren++;
             }

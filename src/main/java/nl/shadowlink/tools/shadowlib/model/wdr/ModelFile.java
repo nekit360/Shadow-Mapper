@@ -9,7 +9,7 @@ import nl.shadowlink.tools.shadowlib.model.model.Element;
  */
 public class ModelFile {
 
-	public void addVertices(Element mdl, byte[] stream, int vertOffset, int polyOffset, int vertSize, int polySize, int StrideSize, int matIndex) {
+	public void addVertices(Element mdl, byte[] stream, int vertOffset, int polyOffset, int vertSize, int polySize, int StrideSize, int matIndex, float[] transform) {
 		for (int i = 0; i < vertSize; i++) {
 			byte[] miniArr = new byte[4];
 			miniArr[0] = stream[vertOffset + (i * StrideSize)];
@@ -27,6 +27,16 @@ public class ModelFile {
 			miniArr[2] = stream[vertOffset + (i * StrideSize) + 10];
 			miniArr[3] = stream[vertOffset + (i * StrideSize) + 11];
 			float z = arr2float(miniArr);
+			if (transform != null) {
+				// the piece's placement in the fragment: three basis rows and a translation (see
+				// FragTypeChild.transform). The geometry of a piece is in its own local space.
+				float nx = transform[0] * x + transform[1] * y + transform[2] * z + transform[9];
+				float ny = transform[3] * x + transform[4] * y + transform[5] * z + transform[10];
+				float nz = transform[6] * x + transform[7] * y + transform[8] * z + transform[11];
+				x = nx;
+				y = ny;
+				z = nz;
+			}
 			miniArr[0] = stream[vertOffset + (i * StrideSize) + 12];
 			miniArr[1] = stream[vertOffset + (i * StrideSize) + 13];
 			miniArr[2] = stream[vertOffset + (i * StrideSize) + 14];
