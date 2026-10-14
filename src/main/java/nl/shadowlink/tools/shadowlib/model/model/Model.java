@@ -147,7 +147,7 @@ public class Model {
      */
     private void createModelFromDrawable(Element element, DrawableModel sys, int sysSize, byte[] stream, ByteReader br) {
         createShadersFromDrawable(element, sys);
-        addDrawableGeometry(element, sys, sysSize, stream, null);
+        addDrawableGeometry(element, sys, sysSize, stream);
         attachEmbeddedDictionary(element, sys, sysSize, br);
     }
 
@@ -180,11 +180,10 @@ public class Model {
      * piece behind the first into the first piece's strips (`cj_gb_bench_2`: 30 strips, 27 of them empty,
      * the other three a tangle of every piece's vertices).
      *
-     * @param transform the piece's placement in the fragment (see `FragTypeChild.transform`), null for a
-     *                  drawable that is already in place - a `.wdr`, a `.wdd` group's drawable, or a
-     *                  fragment's own main drawable
+     * The vertices are read exactly as the file holds them: a fragment's pieces are already in the
+     * fragment's own space (see the note in `createModelFromFragType`), and a `.wdr`'s geometry always is.
      */
-    private void addDrawableGeometry(Element element, DrawableModel sys, int sysSize, byte[] stream, float[] transform) {
+    private void addDrawableGeometry(Element element, DrawableModel sys, int sysSize, byte[] stream) {
         if (sys.mModelCollection == null || sys.mModelCollection.length == 0
                 || sys.mModelCollection[0]._items.isEmpty()) {
             return;
@@ -208,7 +207,7 @@ public class Model {
             // //Message.displayMsgLow("Adding vertices");
 
             mf.addVertices(element, stream, geo.vertexBuffer.DataOffset + sysSize, geo.indexBuffer.DataOffset + sysSize, geo.VertexCount,
-                    geo.FaceCount, geo.VertexStride, stripIndex, transform);
+                    geo.FaceCount, geo.VertexStride, stripIndex);
             // //Message.displayMsgLow("Adding polygons");
             mf.addPolygons(element, stream, geo.vertexBuffer.DataOffset + sysSize, geo.indexBuffer.DataOffset + sysSize, geo.VertexCount,
                     geo.FaceCount, geo.VertexStride, stripIndex);
@@ -328,12 +327,19 @@ public class Model {
         attachEmbeddedDictionary(element, wft.mainDrawable, sysSize, br);
         // some fragments carry the whole mesh in their own drawable (the furniture and the cutscene
         // characters do), others have it in the pieces only - the fence has an empty main drawable
-        addDrawableGeometry(element, wft.mainDrawable, sysSize, stream, null);
-        // every piece brings its own placement: its geometry is in its own local space around the
-        // origin (FragTypeChild.transform), and the two lists are parallel
-        java.util.Iterator<float[]> transforms = wft.childTransforms.iterator();
+        addDrawableGeometry(element, wft.mainDrawable, sysSize, stream);
+        // Every piece brings its geometry **in the fragment's own space**: the eight vectors a
+        // fragTypeChild carries (FragTypeChild.transform) are the piece's own frame - its basis and its
+        // offset - and are *not* a placement for the vertices. Applying that offset moved whole pieces of
+        // 82 % of the fragments (the piece offsets are 1.0 m in the median, 4.6 m at the 90th percentile,
+        // 51 m at most), which is what a user sees as "parts of the .wft models lie under the map"
+        // (`bm_nylamp1`: the lamp arm went 11.5 m down). Measured three ways over the install's props:
+        // the game's own `.ide` box of a fragment equals the untouched box of its first piece for 763 of
+        // 778 models (98.1 %) against 17.7 % with the offset applied, and 91.1 % of the 617 multi-piece
+        // fragments only assemble into one connected object without it (38.9 % with it) - the numbers and
+        // the probe are in `WftPoseProbe` and `STATUS.md`.
         for (DrawableModel piece : wft.childDrawables) {
-            addDrawableGeometry(element, piece, sysSize, stream, transforms.next());
+            addDrawableGeometry(element, piece, sysSize, stream);
         }
         elements.add(element);
     }

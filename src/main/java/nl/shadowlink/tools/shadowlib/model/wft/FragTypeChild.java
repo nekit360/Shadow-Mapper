@@ -37,12 +37,17 @@ public class FragTypeChild {
     public float unknown2;
 
     /**
-     * The piece's placement in the fragment: basis row 0, row 1, row 2 and the translation, each as
-     * `(x, y, z)` - `v' = row0 * v.x + row1 * v.y + row2 * v.z + translation`. Measured on
-     * `cj_gb_bench_2.wft`: the rows are the identity and the translation places each slat (child 0 at
-     * `-1.14, 0.03, 0.30`, child 6 at `1.02, 0.04, 0.30` - the two ends of the bench). The geometry of a
-     * piece is in its own local space around the origin, so without this every piece is drawn where its
-     * own vertices sit and a multi-piece fragment is a pile of its parts.
+     * The eight vectors of this piece's own frame: three basis rows, an offset, and a second set of four
+     * vectors that is the same on every child of a fragment.
+     *
+     * **This is not a placement for the piece's geometry.** Measured over the install's props
+     * (`WftPoseProbe`, 882 fragments): a piece's geometry and its drawable's declared bounds live in the
+     * *fragment's* space already, and the offset moves whole pieces (median 1.0 m, 90th percentile 4.6 m,
+     * 51 m at most) - which is what puts "parts of the .wft models under the map". The game's own `.ide`
+     * box of a fragment equals the untouched box of its first piece for 763 of 778 models (98.1 %), and
+     * 91.1 % of the 617 multi-piece fragments assemble into one connected object without the offset
+     * against 38.9 % with it. The vectors are the piece's own frame (its pivot and basis as the exporter
+     * wrote them), read here because the format carries them - nothing on the render path may apply them.
      */
     public final float[] transform = new float[12];
 

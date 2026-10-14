@@ -9,12 +9,16 @@ import java.nio.ByteOrder
 
 /**
  * A fragment is one element assembled from many pieces (see `Model.createModelFromFragType`): every piece
- * brings its geometry in its own local space plus a placement, and each geometry's indices are local to
- * itself. Two things broke multi-piece fragments for years (measured on `cj_gb_bench_2.wft`, 14 pieces):
- * the strip a geometry went into was the *geometry's* index - which restarts at 0 for every piece while
- * the strip list keeps growing, so every piece behind the first landed in the first piece's strips and the
- * rest stayed empty - and the placement was discarded, so every piece drew at the origin. Single-piece
- * fragments (`cj_fence_4_1.wft`) and `.wdr` models could not see either bug.
+ * brings its geometry in the *fragment's* space and each geometry's indices are local to itself.
+ *
+ * Three things broke multi-piece fragments (measured on `cj_gb_bench_2.wft`, 14 pieces, and over the
+ * install's props with `WftPoseProbe`): the strip a geometry went into was the *geometry's* index - which
+ * restarts at 0 for every piece while the strip list keeps growing, so every piece behind the first landed
+ * in the first piece's strips and the rest stayed empty - and, on top of that, the eight vectors a
+ * `fragTypeChild` carries were read as a *placement* and applied to the vertices, which moved whole pieces
+ * (median 1.0 m, 51 m at most) and put "parts of the .wft models under the map". Single-piece fragments
+ * (`cj_fence_4_1.wft`), `.wdr` models and a *symmetric* assembly (a bench stretched to twice its length
+ * still looks like a bench) could not see the last one.
  */
 internal class FragTypeAssemblyTest {
 
@@ -40,8 +44,8 @@ internal class FragTypeAssemblyTest {
     }
 
     @Test
-    fun `a child carries its placement - three basis rows and a translation`() {
-        // cj_gb_bench_2.wft child 0 as the file writes it: identity rows, the slat's translation
+    fun `a child carries its own frame - three basis rows and an offset`() {
+        // cj_gb_bench_2.wft child 0 as the file writes it: identity rows, the slat's own offset
         val transform = child(
             floatArrayOf(
                 1f, 0f, 0f,
@@ -78,24 +82,19 @@ internal class FragTypeAssemblyTest {
     }
 
     @Test
-    fun `the transform moves a vertex into the fragment`() {
-        // v' = row0 * v.x + row1 * v.y + row2 * v.z + translation
-        val transform = floatArrayOf(
-            0f, -1f, 0f,
-            1f, 0f, 0f,
-            0f, 0f, 1f,
-            3f, 4f, 5f,
-        )
+    fun `a piece's vertices are read as the file holds them, its own frame is not applied`() {
+        // the frame of `cj_gb_bench_2.wft` child 0 (an offset of 1.14 m) must not move the vertex: the
+        // geometry of a piece is already in the fragment's space (see FragTypeChild.transform)
         val stream = ByteArray(36) // one vertex, 36-byte record, position at byte 0
         ByteBuffer.wrap(stream).order(ByteOrder.LITTLE_ENDIAN).putFloat(0, 1f).putFloat(4, 2f).putFloat(8, 3f)
         val element = Element()
         element.createStrip(1, 0)
-        ModelFile().addVertices(element, stream, 0, 36, 1, 0, 36, 0, transform)
+        ModelFile().addVertices(element, stream, 0, 36, 1, 0, 36, 0)
 
         val vertex = element.getStrip(0).getVertex(0)
-        assertEquals(1f, vertex.x, 1e-6f) // 0*1 - 1*2 + 0*3 + 3
-        assertEquals(5f, vertex.y, 1e-6f) // 1*1 + 0*2 + 0*3 + 4
-        assertEquals(8f, vertex.z, 1e-6f) // 0*1 + 0*2 + 1*3 + 5
+        assertEquals(1f, vertex.x, 1e-6f)
+        assertEquals(2f, vertex.y, 1e-6f)
+        assertEquals(3f, vertex.z, 1e-6f)
     }
 
     @Test
@@ -113,12 +112,12 @@ internal class FragTypeAssemblyTest {
         // geometry A of piece 0: two vertices at 0 and 36 -> strip 0
         element.createStrip(1, 0)
         var strip = element.getStripCount() - 1
-        mf.addVertices(element, stream, 0, 36 * 2, 2, 1, 36, strip, null)
+        mf.addVertices(element, stream, 0, 36 * 2, 2, 1, 36, strip)
         mf.addPolygons(element, stream, 0, 36 * 2, 2, 1, 36, strip)
         // geometry A of piece 1: two vertices at 72 and 108, its own indices 0..1 -> strip 1
         element.createStrip(1, 1)
         strip = element.getStripCount() - 1
-        mf.addVertices(element, stream, 36 * 2, 36 * 3, 2, 1, 36, strip, null)
+        mf.addVertices(element, stream, 36 * 2, 36 * 3, 2, 1, 36, strip)
         mf.addPolygons(element, stream, 36 * 2, 36 * 3, 2, 1, 36, strip)
 
         assertEquals(2, element.getStripCount())
