@@ -87,18 +87,20 @@ public class Shader {
      *   `gta_default.sps`) and `prop_green_glassprop_green_glass_a` (100 %) are exported that way;
      * * **not** a **cut-out** ({@link #isCutout()}): its alpha channel is a mask, and the alpha test that draws
      *   it is what a leaf or a fence needs - blending it would wash it out (that is item 11 of `NEXT-STEPS.md`);
-     * * **not** a **decal** ({@link #isDecalPreset()}): a decal is coplanar with the surface it lies on (the
-     *   road markings measure 86 %, the rust stains 59 % of their texels below 0.5), so moving it behind that
-     *   surface costs it the depth test - in `nj_01.img` that is 190 slots of graffiti, road markings, shadows
-     *   and posters, and they keep the path that works for them today.
+     * * **a decal** ({@link #isDecalPreset()}) is drawn in the pass too, with a polygon offset (see
+     *   `Element.applyAlphaState`): its alpha channel is what paints it onto the surface it lies on (road
+     *   markings 86 %, rust stains 59 %, shadows 90 % of their texels below 0.5 - 502 decal shader slots in
+     *   `nj_01.img`), and the pass is what gives it the finished surface to blend against instead of the
+     *   half-drawn frame the opaque pass would leave it with. The offset is what keeps the depth test at the
+     *   end of the frame: a decal is coplanar with the surface it belongs to.
      *
      * @return true when the transparent pass draws this material
      */
     public boolean isTransparent() {
-        if (isCutout() || isDecalPreset()) {
+        if (isCutout()) {
             return false;
         }
-        return isGlass() || isAlphaPreset() || textureHasAlpha;
+        return isGlass() || isAlphaPreset() || isDecalPreset() || textureHasAlpha;
     }
 
     /**
@@ -114,10 +116,11 @@ public class Shader {
 
     /**
      * True when the preset of this material marks it as a **decal**: `gta_decal.sps`, `gta_decal_glue.sps`,
-     * `gta_normal_decal.sps`, `gta_spec_decal.sps`. A decal is a quad that lies *on* a surface (road markings,
-     * graffiti, rust, shadows, posters - 190 slots in `nj_01.img`, alpha 22-98 %), so it belongs in the pass
-     * that draws it immediately after the surface it belongs to, not in the transparent pass at the end of the
-     * frame, where it would lose the depth test against that surface.
+     * `gta_normal_decal.sps`, `gta_spec_decal.sps`, `gta_normal_spec_decal.sps`. A decal is a quad that lies
+     * *on* a surface (road markings, graffiti, rust, shadows, posters - 502 shader slots in `nj_01.img`, 190
+     * of them with an alpha channel the reader decodes, the rest DXT1). It is drawn in the transparent pass
+     * with a **polygon offset** (`Element.applyAlphaState`), which is what keeps its depth test against the
+     * coplanar surface it belongs to at the end of the frame.
      *
      * @return true when this material is a decal
      */

@@ -190,9 +190,11 @@ class RenderMap(
         }
         gl.glPopName()
         // the pass must not leak into what is drawn after the map (the water, the next frame): both are
-        // state a display list elsewhere may never set for itself
+        // state a display list elsewhere may never set for itself. The polygon offset belongs to the decal
+        // materials inside the lists, but the last one may leave it on.
         gl.glDepthMask(true)
         gl.glEnable(GL2.GL_CULL_FACE)
+        gl.glDisable(GL2.GL_POLYGON_OFFSET_FILL)
     }
 
     private fun loadMap(gl: GL2) {
@@ -425,6 +427,7 @@ class RenderMap(
             println("   drawn in the transparent pass: " + Element.transparentShaders
                 + " shader slots on " + modelsWithGlass + " models (glass " + Element.transparentGlass
                 + ", *_alpha presets " + Element.transparentAlphaPresets
+                + ", decals " + Element.transparentDecals
                 + ", transparent diffuse map " + Element.transparentTextures + ")")
         }
         if (Element.unknownShaderParams.isNotEmpty()) {

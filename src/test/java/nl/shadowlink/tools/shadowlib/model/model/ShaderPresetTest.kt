@@ -150,12 +150,26 @@ internal class ShaderPresetTest {
     }
 
     @Test
-    fun `a decal keeps the path that works for it`() {
-        assertFalse(transparent("gta_decal.sps", textureHasAlpha = true),
-            "a decal lies on the surface it belongs to and would lose the depth test behind it")
-        assertFalse(transparent("gta_decal_glue.sps", textureHasAlpha = true))
-        assertFalse(transparent("gta_normal_decal.sps"))
-        assertFalse(transparent("gta_spec_decal.sps"))
+    fun `a decal is drawn in the transparent pass`() {
+        // the alpha channel of a decal is what paints it onto the surface it lies on (road markings 86 %,
+        // shadows 90 % of their texels below 0.5), and the pass is what gives it the finished surface to
+        // blend against - drawn in the opaque pass it blended against a half-drawn frame instead
+        assertTrue(transparent("gta_decal.sps", textureHasAlpha = true))
+        assertTrue(transparent("gta_decal_glue.sps", textureHasAlpha = true))
+        assertTrue(transparent("gta_normal_decal.sps"))
+        assertTrue(transparent("gta_spec_decal.sps"))
+        assertTrue(transparent("gta_normal_spec_decal.sps"))
+    }
+
+    @Test
+    fun `a decal keeps its polygon offset however transparent its map is`() {
+        // the offset is what keeps the depth test against the coplanar surface at the end of the frame,
+        // so the preset - and not the map - is what marks it (see Element.applyAlphaState)
+        val opaqueMap = Shader()
+        opaqueMap.shaderSps = "gta_decal.sps"
+        assertTrue(opaqueMap.isDecalPreset)
+        assertTrue(opaqueMap.isTransparent)
+        assertFalse(opaqueMap.isCutout)
     }
 
     @Test

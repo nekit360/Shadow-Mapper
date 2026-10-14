@@ -107,6 +107,8 @@ public class Element {
                 transparentShaders++;
                 if (shader.isGlass()) {
                     transparentGlass++;
+                } else if (shader.isDecalPreset()) {
+                    transparentDecals++;
                 } else if (shader.isAlphaPreset()) {
                     transparentAlphaPresets++;
                 } else {
@@ -123,7 +125,7 @@ public class Element {
     /** shader slots whose name matched no dictionary */
     public static int shadersWithoutTexture = 0;
 
-    /** shader slots the renderer's transparent pass draws, i.e. every blended material that is not a decal */
+    /** shader slots the renderer's transparent pass draws: every blended material and every decal */
     public static int transparentShaders = 0;
 
     /** ... of those, the ones whose preset says glass */
@@ -131,6 +133,9 @@ public class Element {
 
     /** ... the ones whose preset is an `*_alpha` one */
     public static int transparentAlphaPresets = 0;
+
+    /** ... the ones whose preset marks them as a decal (drawn with a polygon offset) */
+    public static int transparentDecals = 0;
 
     /** ... and the ones whose preset says nothing but whose diffuse map is transparent (the mod's glass doors) */
     public static int transparentTextures = 0;
@@ -145,6 +150,7 @@ public class Element {
         transparentShaders = 0;
         transparentGlass = 0;
         transparentAlphaPresets = 0;
+        transparentDecals = 0;
         transparentTextures = 0;
         unknownShaderParams.clear();
     }
@@ -683,6 +689,18 @@ public class Element {
             // card that faces away is part of the same canopy. Culling them hid a quarter of a crown
             // (Tree_Beech1: 220 799 px with culling against 244 273 px without it, same build).
             gl.glDisable(GL2.GL_CULL_FACE);
+            gl.glDisable(GL2.GL_POLYGON_OFFSET_FILL);
+        } else if (shader != null && shader.isDecalPreset()) {
+            // a decal is painted onto the surface it belongs to and is coplanar with it, so its alpha
+            // channel is what draws it (road markings 86 %, shadows 90 % of their texels below 0.5) and the
+            // polygon offset is what keeps it in front of that surface in the depth test. Drawn without the
+            // offset - which is how the opaque pass drew it - the quad z-fights the road it lies on and
+            // survives only in patches.
+            gl.glDisable(GL2.GL_ALPHA_TEST);
+            gl.glEnable(GL2.GL_BLEND);
+            gl.glDisable(GL2.GL_CULL_FACE);
+            gl.glEnable(GL2.GL_POLYGON_OFFSET_FILL);
+            gl.glPolygonOffset(DECAL_OFFSET_FACTOR, DECAL_OFFSET_UNITS);
         } else if (shader != null && shader.isTransparent() && transparentPass) {
             // the material's own alpha is its transparency, and what stands behind it is drawn already
             gl.glDisable(GL2.GL_ALPHA_TEST);
@@ -690,6 +708,7 @@ public class Element {
             // a single quad - a pane, a sign - is meant to be seen from both sides; the window wall of the
             // mod's cinema is 100 % outward-facing (PaneFacingProbe), so from inside it would be culled away
             gl.glDisable(GL2.GL_CULL_FACE);
+            gl.glDisable(GL2.GL_POLYGON_OFFSET_FILL);
         } else if (shader != null && shader.isTransparent()) {
             gl.glDisable(GL2.GL_ALPHA_TEST);
             // outside the transparent pass there is nothing behind the pane but the clear colour, so it
@@ -697,10 +716,12 @@ public class Element {
             gl.glDisable(GL2.GL_BLEND);
             // ... and it is drawn from both sides either way
             gl.glDisable(GL2.GL_CULL_FACE);
+            gl.glDisable(GL2.GL_POLYGON_OFFSET_FILL);
         } else {
             gl.glDisable(GL2.GL_ALPHA_TEST);
             gl.glEnable(GL2.GL_BLEND);
             gl.glEnable(GL2.GL_CULL_FACE);
+            gl.glDisable(GL2.GL_POLYGON_OFFSET_FILL);
         }
     }
 
@@ -709,5 +730,14 @@ public class Element {
      * and it is the point where a leaf keeps its own colour instead of taking on the background's.
      */
     private static final float CUTOUT_ALPHA = 0.5f;
+
+    /**
+     * The polygon offset a decal is drawn with, negative = toward the viewer. A decal lies on the surface
+     * it belongs to - the same plane, the same depth values - so without the offset the depth test at the
+     * end of the frame decides by rasterisation noise which texels of a marking survive. The values are
+     * deliberately small: they must beat a coplanar surface, not a wall that stands in front of it.
+     */
+    private static final float DECAL_OFFSET_FACTOR = -1.0f;
+    private static final float DECAL_OFFSET_UNITS = -2.0f;
 
 }
