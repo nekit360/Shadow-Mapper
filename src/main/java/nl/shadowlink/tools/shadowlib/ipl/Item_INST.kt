@@ -19,13 +19,27 @@ class Item_INST(private val gameType: GameType) : IplItem() {
     var interior = 0
     var position = Vector3D(0.0f, 0.0f, 0.0f)
     var scale = Vector3D(0.0f, 0.0f, 0.0f)
+    /**
+     * The placement rotation of the instance, as the axis-angle pair `glRotatef` takes - what the
+     * renderer draws. Kept in step with [rotation] by that property's setter.
+     */
+    var axisAngle = Vector4D(0.0f, 0.0f, 1.0f, 0.0f)
+    /**
+     * The placement rotation of the instance as the file stores it. Setting it refreshes [axisAngle],
+     * which is what the renderer draws - the binary reader (GTA: IV) used to leave that at `(0, 0, 0, 0)`
+     * and `glRotatef` on it draws **no** rotation, so every instance whose quaternion is not identity was
+     * drawn in its raw model orientation ("some models are misplaced").
+     */
     var rotation = Vector4D(0.0f, 0.0f, 0.0f, 1.0f)
+        set(value) {
+            field = value
+            axisAngle = value.axisAngle
+        }
     var lod = 0
     var unknown1 = 0
     var unknown2 = 0
     var unknown3 = 0f
     var drawDistance = 300.0f // default value
-    var axisAngle = Vector4D(0.0f, 0.0f, 0.0f, 0.0f)
     private val hidden = false
     var selected = false
     var glListID = 0
@@ -112,7 +126,6 @@ class Item_INST(private val gameType: GameType) : IplItem() {
 
             else -> throw IllegalArgumentException("Unsupported GameType $gameType")
         }
-        axisAngle = rotation.axisAngle
         display()
     }
 
