@@ -53,6 +53,15 @@ public class FragTypeModel {
     /** the drawables of the `fragTypeChild` entries - here is the geometry */
     public final LinkedList<DrawableModel> childDrawables = new LinkedList<>();
 
+    /**
+     * The frame of the piece at the same index in {@link #childDrawables} - the eight vectors of the
+     * `fragTypeChild` (`FragTypeChild.transform`), or null for a piece the file did not carry a frame for.
+     *
+     * The two lists are filled together: the renderer needs the frame next to the geometry it belongs to,
+     * because some pieces *are* stored in their frame (see `Model.createModelFromFragType`).
+     */
+    public final LinkedList<FragTypeChild> childFrames = new LinkedList<>();
+
     /** children that could not be read at all (a broken one must not lose the whole fragment) */
     public int failedChildren = 0;
 
@@ -115,6 +124,7 @@ public class FragTypeModel {
                     continue;
                 }
                 childDrawables.add(drawable);
+                childFrames.add(child);
             } catch (Throwable t) {
                 failedChildren++;
             }

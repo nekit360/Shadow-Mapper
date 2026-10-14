@@ -15,6 +15,20 @@ import nl.shadowlink.tools.shadowlib.model.model.Element;
 public class ModelFile {
 
 	public void addVertices(Element mdl, byte[] stream, int vertOffset, int polyOffset, int vertSize, int polySize, int StrideSize, int matIndex) {
+		addVertices(mdl, stream, vertOffset, polyOffset, vertSize, polySize, StrideSize, matIndex, null);
+	}
+
+	/**
+	 * The same reader, with a piece's frame applied to the positions when `pose` is not null.
+	 *
+	 * `pose` is the three basis rows followed by the offset of a `fragTypeChild` (row-major, 12 floats). The
+	 * frame maps the *fragment's* space into the piece's own, so a piece whose vertices are stored in that
+	 * frame is placed by its **inverse**: `v' = R^T (v - t)` (the basis is orthonormal, so the inverse of the
+	 * rotation is its transpose). With an identity basis that is `v - t`, and a piece whose geometry is
+	 * already in the fragment's space is read unchanged - which piece needs which is decided by the caller
+	 * (`Model.createModelFromFragType`).
+	 */
+	public void addVertices(Element mdl, byte[] stream, int vertOffset, int polyOffset, int vertSize, int polySize, int StrideSize, int matIndex, float[] pose) {
 		for (int i = 0; i < vertSize; i++) {
 			byte[] miniArr = new byte[4];
 			miniArr[0] = stream[vertOffset + (i * StrideSize)];
@@ -61,6 +75,15 @@ public class ModelFile {
 			miniArr[2] = stream[vertOffset + (i * StrideSize) + 34];
 			miniArr[3] = stream[vertOffset + (i * StrideSize) + 35];
 			float v = arr2float(miniArr);
+
+			if (pose != null) {
+				float px = x - pose[9];
+				float py = y - pose[10];
+				float pz = z - pose[11];
+				x = pose[0] * px + pose[3] * py + pose[6] * pz;
+				y = pose[1] * px + pose[4] * py + pose[7] * pz;
+				z = pose[2] * px + pose[5] * py + pose[8] * pz;
+			}
 
 			// System.out.println("XYZ " + i + ":" + x + ", " + y + ", " + z);
 			// Message.displayMsgLow("Normal:" + normx + ", " + normy + ", " + normz);

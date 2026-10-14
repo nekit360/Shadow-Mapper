@@ -8,7 +8,9 @@ import nl.shadowlink.tools.io.WriteFunctions;
 import nl.shadowlink.tools.shadowlib.model.dff.LoadDFF;
 import nl.shadowlink.tools.shadowlib.model.dff.NewConvert;
 import nl.shadowlink.tools.shadowlib.model.wdr.*;
+import nl.shadowlink.tools.shadowlib.model.wft.FragTypeChild;
 import nl.shadowlink.tools.shadowlib.model.wft.FragTypeModel;
+import nl.shadowlink.tools.shadowlib.model.wft.WftPiecePose;
 import nl.shadowlink.tools.shadowlib.texturedic.TextureDic;
 import nl.shadowlink.tools.shadowlib.utils.GameType;
 import nl.shadowlink.tools.shadowlib.utils.hashing.OneAtATimeHasher;
@@ -184,6 +186,13 @@ public class Model {
      * fragment's own space (see the note in `createModelFromFragType`), and a `.wdr`'s geometry always is.
      */
     private void addDrawableGeometry(Element element, DrawableModel sys, int sysSize, byte[] stream) {
+        addDrawableGeometry(element, sys, sysSize, stream, null);
+    }
+
+    /**
+     * The same, with a piece's frame applied to its positions when `pose` is not null (a fragment's piece).
+     */
+    private void addDrawableGeometry(Element element, DrawableModel sys, int sysSize, byte[] stream, float[] pose) {
         if (sys.mModelCollection == null || sys.mModelCollection.length == 0
                 || sys.mModelCollection[0]._items.isEmpty()) {
             return;
@@ -207,7 +216,7 @@ public class Model {
             // //Message.displayMsgLow("Adding vertices");
 
             mf.addVertices(element, stream, geo.vertexBuffer.DataOffset + sysSize, geo.indexBuffer.DataOffset + sysSize, geo.VertexCount,
-                    geo.FaceCount, geo.VertexStride, stripIndex);
+                    geo.FaceCount, geo.VertexStride, stripIndex, pose);
             // //Message.displayMsgLow("Adding polygons");
             mf.addPolygons(element, stream, geo.vertexBuffer.DataOffset + sysSize, geo.indexBuffer.DataOffset + sysSize, geo.VertexCount,
                     geo.FaceCount, geo.VertexStride, stripIndex);
@@ -328,18 +337,14 @@ public class Model {
         // some fragments carry the whole mesh in their own drawable (the furniture and the cutscene
         // characters do), others have it in the pieces only - the fence has an empty main drawable
         addDrawableGeometry(element, wft.mainDrawable, sysSize, stream);
-        // Every piece brings its geometry **in the fragment's own space**: the eight vectors a
-        // fragTypeChild carries (FragTypeChild.transform) are the piece's own frame - its basis and its
-        // offset - and are *not* a placement for the vertices. Applying that offset moved whole pieces of
-        // 82 % of the fragments (the piece offsets are 1.0 m in the median, 4.6 m at the 90th percentile,
-        // 51 m at most), which is what a user sees as "parts of the .wft models lie under the map"
-        // (`bm_nylamp1`: the lamp arm went 11.5 m down). Measured three ways over the install's props:
-        // the game's own `.ide` box of a fragment equals the untouched box of its first piece for 763 of
-        // 778 models (98.1 %) against 17.7 % with the offset applied, and 91.1 % of the 617 multi-piece
-        // fragments only assemble into one connected object without it (38.9 % with it) - the numbers and
-        // the probe are in `WftPoseProbe` and `STATUS.md`.
-        for (DrawableModel piece : wft.childDrawables) {
-            addDrawableGeometry(element, piece, sysSize, stream);
+        // The pieces: their geometry is read exactly as the file holds it unless the piece's own frame says
+        // otherwise - see `WftPiecePose`, which owns the rule and its measurement. `-Dsm.wft.pose=raw|
+        // inverse|rule` forces one behaviour for an A/B frame.
+        String poseMode = WftPiecePose.mode();
+        for (int i = 0; i < wft.childDrawables.size(); i++) {
+            DrawableModel piece = wft.childDrawables.get(i);
+            FragTypeChild frame = i < wft.childFrames.size() ? wft.childFrames.get(i) : null;
+            addDrawableGeometry(element, piece, sysSize, stream, WftPiecePose.poseFor(poseMode, frame, piece));
         }
         elements.add(element);
     }

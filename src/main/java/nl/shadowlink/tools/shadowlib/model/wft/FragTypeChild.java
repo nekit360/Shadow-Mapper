@@ -8,11 +8,11 @@ package nl.shadowlink.tools.shadowlib.model.wft;
  *
  * ```text
  * +0x00  class id (0x006A35F4)
- * +0x04  float, +0x08 float
- * +0x0C  0
- * +0x10  the transform: three basis rows and a translation, 16 bytes each (the fourth float of every
- *        row is unused and reads as NaN), then a second set of four vectors that is the same on every
- *        child of a fragment (0x80 bytes together)
+ * +0x04  float, +0x08 float   (per-piece damage/mass numbers: 50/50, 200/200, 5/5, 100/3.7363)
+ * +0x0C  two u16, the same value twice (0000 0000 for the first piece, 00030003, 00040004, ...)
+ * +0x10  the frame: three basis rows and an offset, 16 bytes each (the fourth float of every
+ *        row is unused and reads as NaN), then a second set of four vectors that is the same on
+ *        every child of a fragment (0x80 bytes together)
  * +0x90  drawable offset   <- the field that says where the piece's geometry is
  * +0x94  0, +0x98 four offsets, +0xA8 four zeros, +0xB8 one offset
  * ```
@@ -20,6 +20,14 @@ package nl.shadowlink.tools.shadowlib.model.wft;
  * The fields behind the drawable offset are kept as raw words: they are pointers into the resource in
  * the files seen so far, but nothing on the render path reads them, and a word that is not a pointer
  * (0 or -1) must not throw here.
+ *
+ * **The frame is a placement for the pieces that are stored in it.** Both kinds of piece exist in the
+ * retail files: `bm_nylamp1`'s pole, its base and its pedestal are stored standing where they belong (the
+ * frame's inverse offset, the piece's bone, lies *inside* the piece's own bound), while the lamp arms, the
+ * signal heads and the fixtures are stored around the fragment's origin and are placed by the **inverse**
+ * of the frame (`v' = R^T (v - t)`), which is the only thing that puts them up the pole where the game
+ * draws them. Which is which is decided by `WftPiecePose`; the measurement, the population counts over the
+ * install's props and the before/after frames are in `STATUS.md` and `NEXT-STEPS.md` item 13.
  */
 public class FragTypeChild {
 
