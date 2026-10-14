@@ -207,8 +207,11 @@ class RenderMap(
         textureCache = glTextures
 
         // progress is reported on a fixed 0..1000 scale: phase 1 (resolving the instances of the
-        // selected IPLs against the IDEs) gets the first 10%, phase 2 (looking for every model in
-        // every image) the rest, so the bar never jumps backwards when the phases change
+        // selected IPLs against the IDEs) gets the first half, phase 2 (looking for every model in
+        // every image) the second, so the bar never jumps backwards when the phases change. The
+        // split follows the measured times (on a large selection both phases run about 14 s); it
+        // used to be 10/90, which parked the bar at "0 %" for the whole slow instance walk because
+        // the printed percent only left 0 after the first 5 % of the instances were done.
         progressTotal = 1000
         progressDone = 0
         progressListener?.invoke(0, progressTotal)
@@ -221,8 +224,8 @@ class RenderMap(
             if (ipl.selected) {
                 ipl.itemsInst.forEach { instance ->
                     instancesSeen++
-                    if (instancesSeen % 200 == 0) {
-                        progressDone = instancesSeen * 100 / instancesTotal
+                    if (instancesSeen % 100 == 0) {
+                        progressDone = instancesSeen * 500 / instancesTotal
                         progressListener?.invoke(progressDone, progressTotal)
                     }
                     var ideNumber = 0
@@ -265,7 +268,7 @@ class RenderMap(
         // the rest of the work is scanning every image for every model they may contain
         val phase2Total = (fm.imgs.size * ideList.size).coerceAtLeast(1)
         var phase2Seen = 0
-        progressDone = 100
+        progressDone = 500
         progressListener?.invoke(progressDone, progressTotal)
         // a name that neither the model nor its own image has may live in a neighbouring image (the game
         // streams the district around it) - see NeighbourDictionaries, which lives for the whole load so
@@ -296,8 +299,8 @@ class RenderMap(
             }
             for (i in ideList.indices) {
                 phase2Seen++
-                if (phase2Seen % 200 == 0) {
-                    progressDone = 100 + phase2Seen * 900 / phase2Total
+                if (phase2Seen % 100 == 0) {
+                    progressDone = 500 + phase2Seen * 500 / phase2Total
                     progressListener?.invoke(progressDone, progressTotal)
                 }
                 if (!boolList[i]) {
